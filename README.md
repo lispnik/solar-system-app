@@ -20,6 +20,17 @@ right now, in Common Lisp on iOS. It uses ECL through
   that `tools/fit-moons.py` fits to Horizons, including the resonance swing of
   Mimas and Tethys. Over 1850–2150 each is within a degree, except Mimas
   (4.6°) and Triton (2.8°).
+- **Rotation**: each body turns according to the IAU's pole directions and
+  rotation angles. Earth turns once a sidereal day with the correct side in
+  daylight, Uranus rolls on its side, and Venus turns backwards. The Sun, the
+  planets and the Moon are textured from Solar System Scope's maps
+  (solarsystemscope.com/textures, CC BY 4.0). The dwarf planets are left
+  untextured because their published maps are invented. Saturn's rings sit in
+  its equatorial plane, and Saturn's shadow falls across them.
+- **Events**: solar and lunar eclipses, transits of Mercury and Venus,
+  oppositions, and conjunctions closer than 0.5° are found in the same
+  ephemeris by a background search. They're tested against NASA's eclipse canon
+  for 2017–2028, with greatest eclipse times within three minutes.
 - **Screen**: each body's direction from the Sun is exact. Distance is
   compressed as r^0.4 (`*radius-exponent*`; 1 is linear) so that Neptune and
   Eris fit on one screen. Each planet's moons are magnified around it on a
@@ -53,6 +64,14 @@ The panel at the bottom works like a video player:
 - The speed selector sets how much simulated time passes per real second:
   real time, an hour, a day, a week, a month or a year.
 - **Now** returns to the present in real time.
+- The bottom row has the tag button (show or hide name labels), **‹ ›** to
+  step to the previous or next event (an eclipse also follows Earth), the
+  name of the event in view (tap it to go there), and the ruler, which eases
+  the view to true distances and back.
+
+Coloured ticks along the scrubber mark events: gold for solar eclipses, red
+for lunar eclipses, white for transits, blue for oppositions, and green for
+conjunctions.
 
 ## Refitting the moons
 

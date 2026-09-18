@@ -34,6 +34,9 @@
   ;; Without this the root view controller decides, and it shows the bar.
   :bundle-info-plist (("UIViewControllerBasedStatusBarAppearance" . :false))
   :bundle-frameworks ("UIKit" "Foundation" "CoreGraphics" "QuartzCore" "Metal" "MetalKit")
+  ;; Planet maps from Solar System Scope (solarsystemscope.com/textures),
+  ;; CC BY 4.0, scaled to 1024 x 512.
+  :bundle-resources (("res/textures" . "textures"))
   :remote-repl #.(and (uiop:getenv "SOLAR_REPL") t)
 
   ;; A device build is made only when it can be signed; identity, team and

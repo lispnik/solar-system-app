@@ -411,3 +411,40 @@ kind, and nothing found that is not catalogued."
                         (events-of :conjunction 2020 2021))))
     (is (and found (< (abs (- (event-utc found) (jd-from-calendar 2020 12 21 18))) 1d0)
              (search "0.1°" (event-title found))))))
+
+;;; ------------------------------------------------------------------
+;;; rotation
+
+(test obliquities
+  ;; The angle between each IAU north pole and its orbit's pole. The IAU's
+  ;; north is the side north of the solar system's plane, whichever way the
+  ;; body spins; Venus and Uranus spin backwards about it (their W falls),
+  ;; so their obliquities by the spin -- 177.36 and 97.77, the fact-sheet
+  ;; figures -- are 180 less these.
+  (let ((tc (centuries-since-j2000 2461301.5d0)))
+    (loop for (name degrees) in '(("Mercury" 0.03d0) ("Venus" 2.64d0) ("Earth" 23.44d0)
+                                  ("Mars" 25.19d0) ("Jupiter" 3.13d0) ("Saturn" 26.73d0)
+                                  ("Uranus" 82.23d0) ("Neptune" 28.32d0))
+          do (let ((found (obliquity-of (find-planet name) tc)))
+               (is (< (abs (- found degrees)) 0.35d0) "~a: ~,2f, not ~,2f" name found degrees)))))
+
+(test the-sun-over-the-earth
+  ;; 2026-09-18 12:00 UTC: the equation of time is +5.9 minutes, so the Sun
+  ;; crossed Greenwich at 11:54 and stands 1.5 degrees west of it; its
+  ;; declination is +1.9 degrees, four days before the equinox.
+  (let ((tc (centuries-since-j2000 (utc-to-tt (jd-from-calendar 2026 9 18 12)))))
+    (multiple-value-bind (x y z) (geocentric +sun+ tc)
+      (multiple-value-bind (longitude latitude)
+          (body-longitude-latitude (find-planet "Earth") tc x y z)
+        (is (< (abs (- longitude -1.5d0)) 0.5d0) "subsolar longitude ~,2f" longitude)
+        (is (< (abs (- latitude 1.9d0)) 0.3d0) "subsolar latitude ~,2f" latitude)))))
+
+(test the-moon-shows-one-face
+  ;; Tidally locked: from the Moon the Earth stays near longitude 0.
+  (dolist (jd '(2451545d0 2455000.3d0 2461301.5d0 2470000.7d0))
+    (let ((tc (centuries-since-j2000 jd)))
+      (multiple-value-bind (x y z) (lunar-position tc)
+        (multiple-value-bind (longitude latitude)
+            (body-longitude-latitude (find-body "Moon") tc (- x) (- y) (- z))
+          (is (< (abs longitude) 8.5d0) "Earth at lunar longitude ~,1f" longitude)
+          (is (< (abs latitude) 7.5d0) "Earth at lunar latitude ~,1f" latitude))))))

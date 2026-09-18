@@ -13,7 +13,11 @@
 ;;;; camera (camera.lisp) arrives as a view and a projection matrix, so a
 ;;;; gesture changes two matrices and nothing on the GPU is rebuilt. Lines
 ;;;; and discs are sized in pixels after projection, so they stay crisp at
-;;;; any zoom.
+;;;; any zoom. Each disc is a sphere to the depth buffer and, where there
+;;;; is a map, to the eye: the view direction is turned into the body's own
+;;;; axes (rotation.lisp) to find the longitude and latitude it sees, so
+;;;; each planet shows the face it has turned to the camera at that moment.
+;;;; Saturn's rings are a flat annulus in its equator.
 
 (in-package #:solar-system)
 
@@ -26,7 +30,10 @@ using namespace metal;
 #define SEGMENTS ~d
 
 struct Uniforms { float4x4 view; float4x4 proj; float2 viewport; float line_width; float pad; float4 sun; };
-struct Disc { float4 position; float4 colour; float4 extra; };  // position.w: radius in pixels; extra.x: glow
+
+// position.w: radius in pixels; extra: glow, texture index (-1 none);
+// ax ay az: the body's axes -- prime meridian, 90 east, north -- in view space.
+struct Disc { float4 position; float4 colour; float4 extra; float4 ax; float4 ay; float4 az; };
 
 struct DiscVarying {
   float4 position [[position]];
@@ -35,10 +42,20 @@ struct DiscVarying {
   float glow;
   float4 colour;
   float3 light;
+  float eye_z;
+  float world_radius;
+  float texture_index [[flat]];
+  float3 ax [[flat]];
+  float3 ay [[flat]];
+  float3 az [[flat]];
 };
+
+struct DiscOut { float4 colour [[color(0)]]; float depth [[depth(any)]]; };
 
 // Behind the camera: a point off screen, so the quad has no area.
 constant float4 nowhere = float4(2.0, 2.0, 0.5, 1.0);
+
+constexpr sampler map_sampler(filter::linear, mip_filter::linear, address::repeat);
 
 vertex DiscVarying disc_vertex(uint vid [[vertex_id]], uint iid [[instance_id]],
                                constant Disc *discs [[buffer(0)]],
@@ -48,9 +65,14 @@ vertex DiscVarying disc_vertex(uint vid [[vertex_id]], uint iid [[instance_id]],
   DiscVarying out;
   out.radius = d.position.w;
   out.glow = d.extra.x;
+  out.texture_index = d.extra.y;
   out.colour = d.colour;
+  out.ax = d.ax.xyz; out.ay = d.ay.xyz; out.az = d.az.xyz;
   float4 eye = u.view * float4(d.position.xyz, 1.0);
   float4 clip = u.proj * eye;
+  out.eye_z = eye.z;
+  // Pixels to scene units at this depth, for the sphere's depth below.
+  out.world_radius = out.radius * (-eye.z) / (u.proj[1][1] * 0.5 * u.viewport.y);
   float extent = out.radius * (1.0 + 5.0 * out.glow) + 1.5;
   float2 corner = float2((vid & 1) ? 1.0 : -1.0, (vid & 2) ? 1.0 : -1.0);
   out.local = corner * extent;
@@ -60,32 +82,97 @@ vertex DiscVarying disc_vertex(uint vid [[vertex_id]], uint iid [[instance_id]],
     out.position = nowhere;
     return out;
   }
-  // A billboard: offset in pixels after projection. No depth buffer --
-  // the discs come farthest first -- so z is simply kept inside the volume.
+  // A billboard: offset in pixels after projection. Its depth is the
+  // sphere's, written by the fragment.
   float2 offset = out.local / (0.5 * u.viewport);
   out.position = float4(clip.xy + offset * clip.w, 0.5 * clip.w, clip.w);
   return out;
 }
 
-// Premultiplied alpha out, so a glow can add light with an alpha of zero.
-fragment float4 disc_fragment(DiscVarying in [[stage_in]])
+// A sphere seen from the camera: textured where there is a map, turned by
+// the body's axes; lit from wherever the Sun is -- from above half lit,
+// from behind a crescent; its depth the depth of its surface, so that
+// orbits and rings pass behind it. Premultiplied alpha out, so a glow can
+// add light with an alpha of zero.
+fragment DiscOut disc_fragment(DiscVarying in [[stage_in]],
+                               constant Uniforms &u [[buffer(1)]],
+                               array<texture2d<float>, 10> maps [[texture(0)]])
 {
   float d = length(in.local);
   float cover = 1.0 - smoothstep(in.radius - 0.75, in.radius + 0.75, d);
+  float2 n2 = in.local / in.radius;
+  float nz = sqrt(saturate(1.0 - dot(n2, n2)));
+  float3 n = float3(n2, nz);
   float3 rgb = in.colour.rgb;
-  if (in.glow == 0.0) {
-    // A sphere facing the camera, lit from wherever the Sun is: from above
-    // the planets are half lit, from behind them a crescent.
-    float2 n2 = in.local / in.radius;
-    float3 n = float3(n2, sqrt(saturate(1.0 - dot(n2, n2))));
-    rgb *= 0.12 + 0.88 * saturate(dot(n, in.light));
+  int index = int(in.texture_index);
+  if (index >= 0 && cover > 0.0) {
+    float3 b = float3(dot(n, in.ax), dot(n, in.ay), dot(n, in.az));
+    float2 uv = float2(0.5 + atan2(b.y, b.x) / (2.0 * M_PI_F), 0.5 - asin(clamp(b.z, -1.0, 1.0)) / M_PI_F);
+    // The level of detail from the disc's size, not from derivatives,
+    // which jump at the seam where longitude wraps.
+    float lod = max(0.0, log2(1024.0 / max(1.0, M_PI_F * in.radius)));
+    rgb = maps[index].sample(map_sampler, uv, level(lod)).rgb;
   }
-  float4 colour = float4(rgb * cover, cover);
+  if (in.glow == 0.0) {
+    rgb *= 0.05 + 0.95 * saturate(dot(n, in.light));
+  }
+  DiscOut out;
+  out.colour = float4(rgb * cover, cover);
   if (in.glow > 0.0) {
     float halo = in.glow * exp(-2.5 * max(d - in.radius, 0.0) / in.radius) * (1.0 - cover);
-    colour.rgb += in.colour.rgb * halo;
+    out.colour.rgb += in.colour.rgb * halo;
   }
-  return colour * in.colour.a;
+  out.colour *= in.colour.a;
+  if (cover < 0.5) {
+    out.depth = 1.0;
+  } else {
+    float z = in.eye_z + in.world_radius * nz;
+    out.depth = (u.proj[2][2] * z + u.proj[3][2]) / (-z);
+  }
+  return out;
+}
+
+// Saturn's rings: a square in the planet's equatorial plane, cut to the
+// annulus. radii: inner, outer, the planet's radius (scene units), opacity.
+// mapping: the moon system's scene radius and its outermost moon's km, and
+// the ring map's inner and outer km -- to undo the square-root scale moons
+// are drawn at, so that each gap falls where it is.
+struct Ring { float4 centre; float4 ax; float4 ay; float4 radii; float4 mapping; };
+
+struct RingVarying { float4 position [[position]]; float2 plane; float3 world; };
+
+vertex RingVarying ring_vertex(uint vid [[vertex_id]],
+                               constant Ring &r [[buffer(0)]],
+                               constant Uniforms &u [[buffer(1)]])
+{
+  float2 corner = float2((vid & 1) ? 1.0 : -1.0, (vid & 2) ? 1.0 : -1.0) * r.radii.y;
+  float3 world = r.centre.xyz + corner.x * r.ax.xyz + corner.y * r.ay.xyz;
+  RingVarying out;
+  out.position = u.proj * (u.view * float4(world, 1.0));
+  out.plane = corner;
+  out.world = world;
+  return out;
+}
+
+fragment float4 ring_fragment(RingVarying in [[stage_in]],
+                              constant Ring &r [[buffer(0)]],
+                              constant Uniforms &u [[buffer(1)]],
+                              texture2d<float> map [[texture(0)]])
+{
+  float rho = length(in.plane);
+  if (rho < r.radii.x || rho > r.radii.y) discard_fragment();
+  float km = r.mapping.y * pow(rho / r.mapping.x, 2.0);
+  float t = (km - r.mapping.z) / (r.mapping.w - r.mapping.z);
+  if (t < 0.0 || t > 1.0) discard_fragment();
+  float4 c = map.sample(map_sampler, float2(t, 0.5));
+  // In the planet's shadow if the way to the Sun passes through it.
+  float3 to_sun = normalize(u.sun.xyz - in.world);
+  float3 from_centre = in.world - r.centre.xyz;
+  float b = dot(from_centre, to_sun);
+  float shade = (b < 0.0 && b * b - dot(from_centre, from_centre) + r.radii.z * r.radii.z > 0.0) ? 0.12 : 1.0;
+  float a = c.a * r.radii.w;
+  if (a < 0.02) discard_fragment();
+  return float4(c.rgb * shade * a, a);
 }
 
 struct OrbitInfo { float4 colour; float4 centre; };  // centre: what the points are relative to
@@ -127,7 +214,7 @@ vertex OrbitVarying orbit_vertex(uint vid [[vertex_id]], uint iid [[instance_id]
   float side = ((vid & 1) ? 1.0 : -1.0) * (out.half_width + 1.0);
   float4 c = (vid & 2) ? c1 : c0;
   float2 p = ((vid & 2) ? s1 : s0) + normal * side;
-  out.position = float4(p / half_viewport * c.w, 0.5 * c.w, c.w);
+  out.position = float4(p / half_viewport * c.w, c.z, c.w);
   out.across = side;
   return out;
 }
@@ -170,7 +257,22 @@ orbits in the scene, the moons' relative to their planets.")
 (defvar *last-placed* nil "PLACE-BODIES' answer for the last frame drawn.")
 (defvar *frame-count* 0)
 (defparameter +uniform-bytes+ 160)
-(defparameter +disc-floats+ 12)
+(defparameter +disc-floats+ 24)
+(defvar *ring-pipeline* nil)
+(defvar *ring-data* nil)      ; 20 floats: see struct Ring
+(defvar *depth-writing* nil "Depth test and write: the bodies and the rings.")
+(defvar *depth-testing* nil "Depth test only: the orbits, which bodies hide.")
+(defvar *maps* (make-array 10 :initial-element nil) "The planet maps, by texture index.")
+(defvar *ring-map* nil)
+
+(defparameter +maps+
+  '(("Sun" . "sun") ("Mercury" . "mercury") ("Venus" . "venus") ("Earth" . "earth")
+    ("Moon" . "moon") ("Mars" . "mars") ("Jupiter" . "jupiter") ("Saturn" . "saturn")
+    ("Uranus" . "uranus") ("Neptune" . "neptune"))
+  "Body and map, in texture order: Solar System Scope's, CC BY 4.0.")
+
+(defparameter +saturn-ring-km+ '(74500d0 . 140220d0)
+  "The inner and outer edge of the ring map: the C ring's inside to the F ring.")
 (defvar *failure* nil "The condition that stopped drawing, if one has.")
 
 (defun nothing-p (object)
@@ -195,6 +297,53 @@ thousands of writes a frame can make cons no argument lists."
 ;;; ------------------------------------------------------------------
 ;;; setup
 
+(defconstant +depth-format+ 252 "MTLPixelFormatDepth32Float.")
+
+(defun depth-state (compare write)
+  (let ((descriptor (objc:alloc-init-object "MTLDepthStencilDescriptor")))
+    (objc:invoke descriptor "setDepthCompareFunction:" compare)
+    (objc:invoke descriptor "setDepthWriteEnabled:" write)
+    (objc:invoke *device* "newDepthStencilStateWithDescriptor:" descriptor)))
+
+(defun metalkit-constant (name)
+  "The NSString a MetalKit constant like MTKTextureLoaderOptionSRGB names."
+  (cffi:mem-ref (cffi:foreign-symbol-pointer name) :pointer))
+
+(defun load-map (loader name extension)
+  "A texture from the bundle's textures/, mipmapped, its bytes taken as they
+are; NIL, and a word on the console, if it will not load."
+  (let ((url (objc:invoke (objc:invoke "NSBundle" "mainBundle")
+                          "URLForResource:withExtension:subdirectory:" name extension "textures"))
+        (options (objc:invoke "NSMutableDictionary" "dictionary")))
+    (flet ((option (key value)
+             (objc:invoke options "setObject:forKey:"
+                          (objc:invoke "NSNumber" "numberWithBool:" value) (metalkit-constant key))))
+      (option "MTKTextureLoaderOptionSRGB" nil)
+      (option "MTKTextureLoaderOptionAllocateMipmaps" t)
+      (option "MTKTextureLoaderOptionGenerateMipmaps" t))
+    (if (nothing-p url)
+        (progn (format t "~&SOLAR: no map ~a.~a in the bundle~%" name extension) nil)
+        (handler-case (objc:invoke-with-error loader "newTextureWithContentsOfURL:options:error:" url options)
+          (error (condition)
+            (format t "~&SOLAR: map ~a would not load: ~a~%" name condition)
+            nil)))))
+
+(defun load-maps ()
+  (let ((loader (objc:invoke (objc:invoke "MTKTextureLoader" "alloc") "initWithDevice:" *device*)))
+    (loop for (nil . file) in +maps+
+          for i from 0
+          do (setf (aref *maps* i) (load-map loader file "jpg")))
+    (setf *ring-map* (load-map loader "saturn-ring" "png"))
+    ;; Every slot bound to something, the missing ones to any map there is.
+    (let ((any (find-if-not #'null *maps*)))
+      (dotimes (i (length *maps*))
+        (unless (aref *maps* i) (setf (aref *maps* i) any))))
+    (format t "~&SOLAR: ~d maps~@[ and the ring~]~%" (count-if-not #'null *maps*) *ring-map*)))
+
+(defun texture-index (body)
+  (let ((index (position (body-name body) +maps+ :key #'car :test #'string=)))
+    (if (and index (aref *maps* index)) index -1)))
+
 (defun make-pipeline (library vertex fragment pixel-format sample-count)
   "A render pipeline from two functions in LIBRARY, blending premultiplied
 alpha into PIXEL-FORMAT."
@@ -202,6 +351,7 @@ alpha into PIXEL-FORMAT."
     (objc:invoke descriptor "setVertexFunction:" (objc:invoke library "newFunctionWithName:" vertex))
     (objc:invoke descriptor "setFragmentFunction:" (objc:invoke library "newFunctionWithName:" fragment))
     (objc:invoke descriptor "setRasterSampleCount:" sample-count)
+    (objc:invoke descriptor "setDepthAttachmentPixelFormat:" +depth-format+)
     (let ((attachment (objc:invoke (objc:invoke descriptor "colorAttachments")
                                    "objectAtIndexedSubscript:" 0)))
       (objc:invoke attachment "setPixelFormat:" pixel-format)
@@ -224,11 +374,16 @@ alpha into PIXEL-FORMAT."
       (setf *queue* (objc:invoke *device* "newCommandQueue")
             *orbit-pipeline* (make-pipeline library "orbit_vertex" "orbit_fragment" pixel-format samples)
             *disc-pipeline* (make-pipeline library "disc_vertex" "disc_fragment" pixel-format samples)
+            *ring-pipeline* (make-pipeline library "ring_vertex" "ring_fragment" pixel-format samples)
+            *depth-writing* (depth-state 3 t)     ; less or equal
+            *depth-testing* (depth-state 3 nil)
+            *ring-data* (cffi:foreign-alloc :float :count 20)
             *orbit-buffer* (objc:invoke *device* "newBufferWithLength:options:"
                                         (* 16 orbits (1+ +segments+)) 0)
             *uniforms* (cffi:foreign-alloc :float :count (/ +uniform-bytes+ 4))
             *discs* (cffi:foreign-alloc :float :count (* +disc-floats+ (1+ orbits)))
             *orbit-info* (cffi:foreign-alloc :float :count (* 8 orbits)))
+      (load-maps)
       (format t "SOLAR: Metal ready on ~a, ~dx MSAA; ~d orbits~%"
               (objc:ns-string-to-string (objc:invoke *device* "name")) samples orbits)
       (finish-output))))
@@ -294,53 +449,110 @@ in a drawable HEIGHT pixels tall."
 
 (defun place-bodies (tc k aspect height pixels-per-point)
   "Every body's scene position, depth, disc radius and opacity, as a list
-of (depth body x y z radius alpha), and the moon systems' opacities, as an
-alist. Moons fade in as their system grows on the screen beyond four times
-their planet's disc, and are gone below two and a half."
-  (let* ((enlarge (max 1d0 (min 3d0 (sqrt (camera-zoom *camera*)))))
+of (depth body x y z radius alpha), and the moon systems -- (body x y z
+alpha on-screen-radius) -- as an alist. Moons fade in as their system
+grows on the screen beyond four times their planet's disc, and are gone
+below two and a half. Within a system that is showing, the planet and its
+moons are drawn to the system's own scale -- the square root of their
+radius over the outermost moon's distance, as the moons' distances are --
+so that the planet grows as the camera comes close, its moons stay
+outside it, and Saturn's rings inside Mimas."
+  (let* ((zoom-enlarge (sqrt (camera-zoom *camera*)))
          (sun (multiple-value-list
                (if (eq *frame* :barycentric)
                    (multiple-value-bind (x y z) (sun-barycentric-offset tc) (compress x y z k))
                    (values 0d0 0d0 0d0))))
          (placed '())
          (systems '()))
-    (flet ((place (body x y z &optional (alpha 1d0))
-             (let ((depth (nth-value 2 (view-position *camera* aspect x y z))))
-               (push (list depth body x y z (* enlarge (disc-radius body pixels-per-point)) alpha)
-                     placed)
-               depth)))
+    (labels ((base (body)
+               ;; Followed and without moons to set a scale: let it grow.
+               (* (max 1d0 (min (if (and (eq body *focus*) (null (assoc body *scales*))) 12d0 3d0)
+                                zoom-enlarge))
+                  (disc-radius body pixels-per-point)))
+             (place (body x y z radius &optional (alpha 1d0))
+               (let ((depth (nth-value 2 (view-position *camera* aspect x y z))))
+                 (push (list depth body x y z radius alpha) placed)
+                 depth)))
       (destructuring-bind (sx sy sz) sun
-        (place +sun+ sx sy sz)
+        (place +sun+ sx sy sz (base +sun+))
         (dolist (body (heliocentric-bodies))
           (multiple-value-bind (x y z) (multiple-value-call #'compress
                                          (heliocentric-position body tc) k)
             (let* ((px (+ x sx)) (py (+ y sy)) (pz (+ z sz))
-                   (depth (place body px py pz))
+                   (depth (nth-value 2 (view-position *camera* aspect px py pz)))
                    (scale (rest (assoc body *scales*))))
-              (when scale
-                (destructuring-bind (radius . outermost) scale
-                  (let* ((on-screen (* radius (pixels-per-unit height depth)))
-                         (disc (* enlarge (disc-radius body pixels-per-point)))
-                         (alpha (smoothstep (* 2.5d0 disc) (* 4d0 disc) on-screen)))
-                    (push (list body px py pz alpha) systems)
-                    (dolist (moon (moons-of body))
-                      (multiple-value-bind (dx dy dz)
-                          (multiple-value-call #'moon-display-offset
-                            (moon-offset moon tc) radius outermost)
-                        (place moon (+ px dx) (+ py dy) (+ pz dz) alpha)))))))))))
-    (values placed systems sun)))
+              (if (null scale)
+                  (place body px py pz (base body))
+                  (destructuring-bind (radius . outermost) scale
+                    (let* ((on-screen (* radius (pixels-per-unit height depth)))
+                           (outermost-km (* outermost +km-per-au+))
+                           (disc (base body))
+                           (alpha (smoothstep (* 2.5d0 disc) (* 4d0 disc) on-screen)))
+                      ;; As the system shows, from the ordinary disc to
+                      ;; the system's own scale -- not the larger of the
+                      ;; two, or a followed planet's enlarged disc would
+                      ;; swallow its rings and inner moons.
+                      (flet ((to-scale (km) (* on-screen (sqrt (/ km outermost-km))))
+                             (blend (ordinary scaled) (+ ordinary (* alpha (- scaled ordinary)))))
+                        (place body px py pz (blend disc (to-scale (body-radius-km body))))
+                        (push (list body px py pz alpha on-screen) systems)
+                        (dolist (moon (moons-of body))
+                          (multiple-value-bind (dx dy dz)
+                              (multiple-value-call #'moon-display-offset
+                                (moon-offset moon tc) radius outermost)
+                            (place moon (+ px dx) (+ py dy) (+ pz dz)
+                                   (max (* 1.3d0 pixels-per-point)
+                                        (blend (base moon) (to-scale (body-radius-km moon))))
+                                   alpha)))))))))))
+      (values placed systems sun))))
 
-(defun fill-discs (placed)
+(defun view-axes (body tc)
+  "Nine values: BODY's axes turned into view space, or NIL."
+  (multiple-value-bind (ax ay az bx by bz cx cy cz) (body-axes body tc)
+    (when ax
+      (let ((r (solar-system.core::camera-rotation *camera*)))
+        (flet ((turn (x y z)
+                 (values (+ (* (aref r 0) x) (* (aref r 1) y) (* (aref r 2) z))
+                         (+ (* (aref r 3) x) (* (aref r 4) y) (* (aref r 5) z))
+                         (+ (* (aref r 6) x) (* (aref r 7) y) (* (aref r 8) z)))))
+          (multiple-value-call #'values (turn ax ay az) (turn bx by bz) (turn cx cy cz)))))))
+
+(defun fill-discs (placed tc)
   "The bodies into *DISCS*, farthest from the camera first, so that nearer
-ones draw over them."
+ones blend over them at their edges."
   (loop for (nil body x y z radius alpha) in (sort (copy-list placed) #'< :key #'first)
         for slot from 0
+        for base = (* +disc-floats+ slot)
         for colour = (body-colour body)
-        do (store-floats *discs* (* +disc-floats+ slot)
+        for index = (if (> alpha 0d0) (texture-index body) -1)
+        do (store-floats *discs* base
                          x y z radius
                          (aref colour 0) (aref colour 1) (aref colour 2) alpha
-                         (if (eq body +sun+) 1 0) 0 0 0))
+                         (if (eq body +sun+) 1 0) index 0 0)
+           (multiple-value-bind (ax ay az bx by bz cx cy cz)
+               (if (>= index 0) (view-axes body tc) (values 1d0 0d0 0d0 0d0 1d0 0d0 0d0 0d0 1d0))
+             (store-floats *discs* (+ base 12) ax ay az 0 bx by bz 0 cx cy cz 0)))
   (length placed))
+
+(defun fill-ring (systems tc)
+  "Saturn's rings into *RING-DATA*, at the moon system's scale; their
+opacity, the system's. Values T if they are to be drawn."
+  (let* ((saturn (find-planet "Saturn"))
+         (system (rest (assoc saturn systems)))
+         (scale (rest (assoc saturn *scales*))))
+    (when (and system scale *ring-map* (> (fourth system) 0.01d0))
+      (destructuring-bind (px py pz alpha on-screen) system
+        (declare (ignore on-screen))
+        (destructuring-bind (radius . outermost) scale
+          (let ((outermost-km (* outermost +km-per-au+)))
+            (flet ((to-scale (km) (* radius (sqrt (/ km outermost-km)))))
+              (multiple-value-bind (ax ay az bx by bz) (body-axes saturn tc)
+                (store-floats *ring-data* 0
+                              px py pz 1  ax ay az 0  bx by bz 0
+                              (to-scale (car +saturn-ring-km+)) (to-scale (cdr +saturn-ring-km+))
+                              (to-scale (body-radius-km saturn)) alpha
+                              radius outermost-km (car +saturn-ring-km+) (cdr +saturn-ring-km+))
+                t))))))))
 
 (defun fill-orbit-info (systems sun)
   "Each orbit's colour, opacity and centre: the Sun's family round the Sun,
@@ -357,7 +569,8 @@ as its system is visible."
   (loop for moon in *moons*
         for slot from (length (heliocentric-bodies))
         for colour = (body-colour (body-parent moon))
-        do (destructuring-bind (px py pz alpha) (rest (assoc (body-parent moon) systems))
+        do (destructuring-bind (px py pz alpha &rest rest) (rest (assoc (body-parent moon) systems))
+             (declare (ignore rest))
              (store-floats *orbit-info* (* 8 slot)
                            (aref colour 0) (aref colour 1) (aref colour 2) (* 0.35d0 alpha)
                            px py pz 0))))
@@ -408,6 +621,9 @@ within REACH points of its disc, or NIL."
   "Follow BODY; for a planet with moons, come close enough to see them."
   (setf *focus* body)
   (let ((scale (and body (rest (assoc body *scales*)))))
+    ;; One without moons: near enough that its disc is a good size.
+    (when (and body (null scale))
+      (setf (camera-zoom *camera*) (max (camera-zoom *camera*) 60d0)))
     (when scale
       ;; The system's radius at about a third of the shorter side: at the
       ;; target, pixels per unit are h/2 / tan(fov/2) / distance.
@@ -439,14 +655,16 @@ within REACH points of its disc, or NIL."
              (tc (centuries-since-j2000 (utc-to-tt jd)))
              (k (compression tc))
              (orbits (length (orbiters)))
-             (discs 0))
+             (discs 0)
+             (ring nil))
         (ensure-orbits tc k)
         (ensure-moon-orbits tc)
         (multiple-value-bind (placed systems sun)
             (place-bodies tc k aspect height pixels-per-point)
           (setf *last-placed* placed)
           (follow-focus placed)
-          (setf discs (fill-discs placed))
+          (setf discs (fill-discs placed tc)
+                ring (fill-ring systems tc))
           (fill-orbit-info systems sun)
           (store-matrix *uniforms* 0 (view-matrix *camera* aspect))
           (store-matrix *uniforms* 16 (projection-matrix *camera* aspect))
@@ -456,20 +674,33 @@ within REACH points of its disc, or NIL."
           (unless (nothing-p pass)
             (let* ((commands (objc:invoke *queue* "commandBuffer"))
                    (encoder (objc:invoke commands "renderCommandEncoderWithDescriptor:" pass)))
+              ;; Bodies first, writing their spheres' depth; then the
+              ;; rings, which Saturn hides half of; then the orbits, which
+              ;; pass behind whatever is nearer.
+              (objc:invoke encoder "setDepthStencilState:" *depth-writing*)
+              (objc:invoke encoder "setRenderPipelineState:" *disc-pipeline*)
+              (objc:invoke encoder "setVertexBytes:length:atIndex:" *discs*
+                           (* 4 +disc-floats+ discs) 0)
+              (objc:invoke encoder "setVertexBytes:length:atIndex:" *uniforms* +uniform-bytes+ 1)
+              (objc:invoke encoder "setFragmentBytes:length:atIndex:" *uniforms* +uniform-bytes+ 1)
+              (dotimes (i (length *maps*))
+                (objc:invoke encoder "setFragmentTexture:atIndex:" (aref *maps* i) i))
+              (objc:invoke encoder "drawPrimitives:vertexStart:vertexCount:instanceCount:"
+                           4 0 4 discs)
+              (when ring
+                (objc:invoke encoder "setRenderPipelineState:" *ring-pipeline*)
+                (objc:invoke encoder "setVertexBytes:length:atIndex:" *ring-data* 80 0)
+                (objc:invoke encoder "setFragmentBytes:length:atIndex:" *ring-data* 80 0)
+                (objc:invoke encoder "setFragmentTexture:atIndex:" *ring-map* 0)
+                (objc:invoke encoder "drawPrimitives:vertexStart:vertexCount:" 4 0 4))
               ;; Orbits: a quad (triangle strip of 4) per segment.
+              (objc:invoke encoder "setDepthStencilState:" *depth-testing*)
               (objc:invoke encoder "setRenderPipelineState:" *orbit-pipeline*)
               (objc:invoke encoder "setVertexBuffer:offset:atIndex:" *orbit-buffer* 0 0)
               (objc:invoke encoder "setVertexBytes:length:atIndex:" *uniforms* +uniform-bytes+ 1)
               (objc:invoke encoder "setVertexBytes:length:atIndex:" *orbit-info* (* 32 orbits) 2)
               (objc:invoke encoder "drawPrimitives:vertexStart:vertexCount:instanceCount:"
                            4 0 4 (* orbits +segments+))
-              ;; Bodies: a quad per disc, farthest first.
-              (objc:invoke encoder "setRenderPipelineState:" *disc-pipeline*)
-              (objc:invoke encoder "setVertexBytes:length:atIndex:" *discs*
-                           (* 4 +disc-floats+ discs) 0)
-              (objc:invoke encoder "setVertexBytes:length:atIndex:" *uniforms* +uniform-bytes+ 1)
-              (objc:invoke encoder "drawPrimitives:vertexStart:vertexCount:instanceCount:"
-                           4 0 4 discs)
               (objc:invoke encoder "endEncoding")
               (objc:invoke commands "presentDrawable:" (objc:invoke view "currentDrawable"))
               (objc:invoke commands "commit"))))
@@ -543,6 +774,7 @@ the Lisp side of a frame took on average and at worst."
                            #(0d0 0d0 100d0 100d0) *device*)))
     (objc:invoke view "setTranslatesAutoresizingMaskIntoConstraints:" nil)
     (objc:invoke view "setSampleCount:" 4)
+    (objc:invoke view "setDepthStencilPixelFormat:" +depth-format+)
     (objc:invoke view "setPreferredFramesPerSecond:" 60)
     (objc:invoke view "setDelegate:" (ui:keep (make-instance 'solar-renderer)))
     (setf *view* view)))

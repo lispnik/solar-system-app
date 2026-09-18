@@ -32,4 +32,6 @@
    #:view-position #:view-matrix #:projection-matrix
    ;; events
    #:event #:event-jd #:event-kind #:event-title #:event-utc #:find-events
-   #:events-in-chunk #:chunk-start #:+chunk-days+))
+   #:events-in-chunk #:chunk-start #:+chunk-days+
+   ;; rotation
+   #:body-axes #:body-longitude-latitude #:obliquity-of #:geocentric #:earth-position))
