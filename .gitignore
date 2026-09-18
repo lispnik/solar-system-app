@@ -1,0 +1,10 @@
+# macOS
+.DS_Store
+
+# Build products: the app bundles, the cross-compilation cache, fasls
+/build/
+*.fasl
+*.fas
+
+# ocicl-vendored sources, if a Lisp is started here
+/ocicl/
