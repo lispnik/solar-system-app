@@ -333,3 +333,81 @@ discards what a TEST-OP returns, so the status comes from here."
   (multiple-value-bind (x y z) (sun-barycentric-offset (centuries-since-j2000 2461301.5d0))
     (let ((r-solar-radii (/ (* 149597870.7d0 (sqrt (+ (* x x) (* y y) (* z z)))) 695700d0)))
       (is (< 0.01d0 r-solar-radii 2.3d0) "~,3f solar radii" r-solar-radii))))
+
+;;; ------------------------------------------------------------------
+;;; events, against the published catalogues
+
+(defparameter +solar-eclipses-2017-2028+
+  ;; NASA's Five Millennium Canon (Espenak & Meeus), greatest eclipse.
+  ;; 2023-04-20 is hybrid; at greatest eclipse it was total.
+  '((2017 2 26 "Annular") (2017 8 21 "Total") (2018 2 15 "Partial") (2018 7 13 "Partial")
+    (2018 8 11 "Partial") (2019 1 6 "Partial") (2019 7 2 "Total") (2019 12 26 "Annular")
+    (2020 6 21 "Annular") (2020 12 14 "Total") (2021 6 10 "Annular") (2021 12 4 "Total")
+    (2022 4 30 "Partial") (2022 10 25 "Partial") (2023 4 20 "Total") (2023 10 14 "Annular")
+    (2024 4 8 "Total") (2024 10 2 "Annular") (2025 3 29 "Partial") (2025 9 21 "Partial")
+    (2026 2 17 "Annular") (2026 8 12 "Total") (2027 2 6 "Annular") (2027 8 2 "Total")
+    (2028 1 26 "Annular") (2028 7 22 "Total")))
+
+(defparameter +lunar-eclipses-2017-2028+
+  '((2017 2 11 "Penumbral") (2017 8 7 "Partial") (2018 1 31 "Total") (2018 7 27 "Total")
+    (2019 1 21 "Total") (2019 7 16 "Partial") (2020 1 10 "Penumbral") (2020 6 5 "Penumbral")
+    (2020 7 5 "Penumbral") (2020 11 30 "Penumbral") (2021 5 26 "Total") (2021 11 19 "Partial")
+    (2022 5 16 "Total") (2022 11 8 "Total") (2023 5 5 "Penumbral") (2023 10 28 "Partial")
+    (2024 3 25 "Penumbral") (2024 9 18 "Partial") (2025 3 14 "Total") (2025 9 7 "Total")
+    (2026 3 3 "Total") (2026 8 28 "Partial") (2027 2 20 "Penumbral") (2027 7 18 "Penumbral")
+    (2027 8 17 "Penumbral") (2028 1 12 "Partial") (2028 7 6 "Partial") (2028 12 31 "Total")))
+
+(defun events-of (kind from-year to-year)
+  (remove kind (find-events (jd-from-calendar from-year 1 1) (jd-from-calendar to-year 1 1))
+          :key #'event-kind :test-not #'eq))
+
+(defun matches-catalogue (events catalogue slack)
+  "Each catalogued (year month day kind) found within SLACK days and of that
+kind, and nothing found that is not catalogued."
+  (is (= (length catalogue) (length events))
+      "~d found, ~d catalogued: ~{~a~^, ~}" (length events) (length catalogue)
+      (mapcar (lambda (e) (format nil "~a ~a" (subseq (format-jd (event-utc e)) 0 10) (event-title e)))
+              events))
+  (loop for (year month day kind) in catalogue
+        for jd = (jd-from-calendar year month day 12)
+        for found = (find-if (lambda (e) (< (abs (- (event-utc e) jd)) slack)) events)
+        do (is (and found (search kind (event-title found)))
+               "~d-~2,'0d-~2,'0d: expected ~a, found ~a" year month day kind
+               (and found (event-title found)))))
+
+(test solar-eclipses-2017-2028
+  (matches-catalogue (events-of :solar-eclipse 2017 2029) +solar-eclipses-2017-2028+ 0.6d0))
+
+(test lunar-eclipses-2017-2028
+  (matches-catalogue (events-of :lunar-eclipse 2017 2029) +lunar-eclipses-2017-2028+ 0.6d0))
+
+(test eclipse-times
+  ;; Greatest eclipse, NASA: 2024-04-08 18:17:16 and 2026-08-12 17:46:06 UT.
+  (dolist (expected (list (jd-from-calendar 2024 4 8 18 17 16) (jd-from-calendar 2026 8 12 17 46 6)))
+    (let ((found (find-if (lambda (e) (< (abs (- (event-utc e) expected)) 0.5d0))
+                          (events-of :solar-eclipse 2024 2027))))
+      (is (and found (< (abs (- (event-utc found) expected)) (/ 3d0 1440)))
+          "within three minutes of ~a" (format-jd expected)))))
+
+(test transits-2000-2040
+  (matches-catalogue (events-of :transit 2000 2041)
+                     '((2003 5 7 "Mercury") (2004 6 8 "Venus") (2006 11 8 "Mercury")
+                       (2012 6 6 "Venus") (2016 5 9 "Mercury") (2019 11 11 "Mercury")
+                       (2032 11 13 "Mercury") (2039 11 7 "Mercury"))
+                     0.6d0))
+
+(test mars-oppositions
+  (let ((found (remove-if-not (lambda (e) (search "Mars" (event-title e)))
+                              (events-of :opposition 2018 2030))))
+    (matches-catalogue found
+                       '((2018 7 27 "Mars") (2020 10 13 "Mars") (2022 12 8 "Mars")
+                         (2025 1 16 "Mars") (2027 2 19 "Mars") (2029 3 25 "Mars"))
+                       1d0)))
+
+(test the-great-conjunction-of-2020
+  ;; Jupiter and Saturn 0.1 degree apart on 2020-12-21. The planets' own
+  ;; errors, a tenth of a degree, move the moment by about half a day.
+  (let ((found (find-if (lambda (e) (search "Jupiter–Saturn" (event-title e)))
+                        (events-of :conjunction 2020 2021))))
+    (is (and found (< (abs (- (event-utc found) (jd-from-calendar 2020 12 21 18))) 1d0)
+             (search "0.1°" (event-title found))))))

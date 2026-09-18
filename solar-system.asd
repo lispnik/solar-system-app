@@ -22,6 +22,7 @@
                (:file "controls")
                (:file "labels")
                (:file "scale")
+               (:file "timeline")
                (:file "app"))
 
   :bundle-identifier "org.asdf-ios-app.solar-system"

@@ -29,4 +29,7 @@
    ;; the camera
    #:*field-of-view* #:camera #:make-camera #:reset-camera #:camera-zoom
    #:turn-camera #:zoom-camera #:pan-camera #:camera-distance #:fit-distance
-   #:view-position #:view-matrix #:projection-matrix))
+   #:view-position #:view-matrix #:projection-matrix
+   ;; events
+   #:event #:event-jd #:event-kind #:event-title #:event-utc #:find-events
+   #:events-in-chunk #:chunk-start #:+chunk-days+))

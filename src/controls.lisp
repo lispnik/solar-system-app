@@ -187,8 +187,13 @@ move the labels."
     view))
 
 (defun tools-row ()
-  "The labels and scale toggles, at the two ends of the row."
-  (row *labels-button* (spacer) *scale-button*))
+  "The labels toggle, the events -- the one before, the one in view, the
+one after -- and the scale toggle."
+  (row *labels-button*
+       (icon-button "chevron.left" #'previous-event)
+       (make-event-button)
+       (icon-button "chevron.right" #'next-event)
+       *scale-button*))
 
 (defun make-panel ()
   "The playback controls, on a dark blur."
@@ -249,6 +254,7 @@ move the labels."
     (setf *panel* panel)
     (centre-window (sim-jd))
     (show-playing)
+    (make-tick-layers)
     panel))
 
 ;;; ------------------------------------------------------------------
