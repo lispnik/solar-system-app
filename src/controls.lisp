@@ -48,6 +48,8 @@
 (defvar *window-start-label* nil)
 (defvar *window-end-label* nil)
 (defvar *panel* nil)
+(defvar *labels-button* nil)
+(defvar *scale-button* nil)
 (defvar *clock-label* nil "The date and rate, top left.")
 
 (defun rate ()
@@ -113,7 +115,10 @@ finger is on the scrubber."
 
 (defun after-frame (jd)
   "Called by DRAW-FRAME with the date it drew: stop at the ends of the
-ephemeris, follow the date with the scrubber's window, move the thumb."
+ephemeris, follow the date with the scrubber's window, move the thumb, and
+move the labels."
+  (update-labels)
+  (step-scale)
   (when *slider*
     (when (or (< jd +earliest-jd+) (> jd +latest-jd+))
       (setf *playing* nil)
@@ -175,6 +180,16 @@ ephemeris, follow the date with the scrubber's window, move the thumb."
     (dolist (view views) (objc:invoke stack "addArrangedSubview:" view))
     stack))
 
+(defun spacer ()
+  "A view that takes up whatever room its row has left."
+  (let ((view (ui:new "UIView")))
+    (objc:invoke view "setContentHuggingPriority:forAxis:" 1.0 0)
+    view))
+
+(defun tools-row ()
+  "The labels and scale toggles, at the two ends of the row."
+  (row *labels-button* (spacer) *scale-button*))
+
 (defun make-panel ()
   "The playback controls, on a dark blur."
   (let* ((panel (objc:invoke (objc:invoke "UIVisualEffectView" "alloc") "initWithEffect:"
@@ -218,9 +233,12 @@ ephemeris, follow the date with the scrubber's window, move the thumb."
       (objc:invoke dates "setDistribution:" 3)       ; equal spacing: one each end
       (objc:invoke column "setAxis:" 1)
       (objc:invoke column "setSpacing:" 6d0)
+      (setf *labels-button* (icon-button "tag.fill" #'toggle-labels)
+            *scale-button* (icon-button "ruler" #'toggle-scale))
       (dolist (view (list (row *play-button* *slider* *span-button*)
                           dates
-                          (row *direction-button* *speed-control* now-button)))
+                          (row *direction-button* *speed-control* now-button)
+                          (tools-row)))
         (objc:invoke column "addArrangedSubview:" view)))
     (objc:invoke (objc:invoke panel "contentView") "addSubview:" column)
     (let ((content (objc:invoke panel "contentView")))

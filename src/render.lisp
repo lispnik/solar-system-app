@@ -371,27 +371,38 @@ as its system is visible."
         (let ((target (solar-system.core::camera-target *camera*)))
           (setf (aref target 0) x (aref target 1) y (aref target 2) z))))))
 
-(defun body-at (view px py &optional (reach 24d0))
-  "The visible body drawn nearest the point PX, PY (points, y down) of VIEW,
-within REACH points of its disc, or NIL."
+(defun screen-metrics (view)
+  "Values width and height in pixels, pixels per point, aspect, and the
+projection matrix: what TO-POINTS needs, read once."
   (let* ((size (objc:invoke view "drawableSize"))
          (width (float (aref size 0) 1d0))
          (height (float (aref size 1) 1d0))
-         (scale (float (objc:invoke view "contentScaleFactor") 1d0))
-         (aspect (/ width height))
-         (projection (projection-matrix *camera* aspect))
-         (best nil) (best-distance nil))
-    (loop for (nil body x y z radius alpha) in *last-placed*
-          when (> alpha 0.5d0)
-            do (multiple-value-bind (vx vy vz) (view-position *camera* aspect x y z)
-                 (when (minusp vz)
-                   (let* ((sx (/ (* 0.5d0 width (1+ (/ (* (aref projection 0) vx) (- vz)))) scale))
-                          (sy (/ (* 0.5d0 height (- 1 (/ (* (aref projection 5) vy) (- vz)))) scale))
-                          (distance (- (sqrt (+ (expt (- sx px) 2) (expt (- sy py) 2)))
-                                       (/ radius scale))))
-                     (when (and (< distance reach) (or (null best) (< distance best-distance)))
-                       (setf best body best-distance distance))))))
-    best))
+         (aspect (/ width height)))
+    (values width height (float (objc:invoke view "contentScaleFactor") 1d0) aspect
+            (projection-matrix *camera* aspect))))
+
+(defun to-points (x y z width height scale aspect projection)
+  "Values the screen position in points, y down, of scene point X Y Z; NIL
+if it is behind the camera."
+  (multiple-value-bind (vx vy vz) (view-position *camera* aspect x y z)
+    (when (minusp vz)
+      (values (/ (* 0.5d0 width (1+ (/ (* (aref projection 0) vx) (- vz)))) scale)
+              (/ (* 0.5d0 height (- 1 (/ (* (aref projection 5) vy) (- vz)))) scale)))))
+
+(defun body-at (view px py &optional (reach 24d0))
+  "The visible body drawn nearest the point PX, PY (points, y down) of VIEW,
+within REACH points of its disc, or NIL."
+  (multiple-value-bind (width height scale aspect projection) (screen-metrics view)
+    (let ((best nil) (best-distance nil))
+      (loop for (nil body x y z radius alpha) in *last-placed*
+            when (> alpha 0.5d0)
+              do (multiple-value-bind (sx sy) (to-points x y z width height scale aspect projection)
+                   (when sx
+                     (let ((distance (- (sqrt (+ (expt (- sx px) 2) (expt (- sy py) 2)))
+                                        (/ radius scale))))
+                       (when (and (< distance reach) (or (null best) (< distance best-distance)))
+                         (setf best body best-distance distance))))))
+      best)))
 
 (defun focus-on (body)
   "Follow BODY; for a planet with moons, come close enough to see them."

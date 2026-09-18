@@ -23,8 +23,8 @@ GET-UNIVERSAL-TIME is whole seconds."
 
 (defun update-clock ()
   (objc:invoke *clock-label* "setText:"
-               (format nil "~a~%~a~@[~%following ~a~]~@[~%drawing stopped: ~a~]"
-                       (format-jd (sim-jd)) (describe-state)
+               (format nil "~a~%~a~@[~%~a~]~@[~%following ~a~]~@[~%drawing stopped: ~a~]"
+                       (format-jd (sim-jd)) (describe-state) (describe-scale)
                        (and *focus* (body-name *focus*)) *failure*)))
 
 (defun launch-time-scale ()
@@ -51,6 +51,7 @@ into its argument domain -- so a simulator launch can start the clock fast:
     (dolist (edge '("topAnchor" "bottomAnchor" "leadingAnchor" "trailingAnchor"))
       (ui:pin view edge root edge))
     (add-gestures view)
+    (make-labels root)
     (let ((panel (make-panel)))
       (objc:invoke root "addSubview:" panel)
       (ui:pin panel "leadingAnchor" safe "leadingAnchor" 12)

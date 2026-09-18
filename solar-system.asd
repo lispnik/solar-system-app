@@ -20,6 +20,8 @@
   :components ((:file "app-package")
                (:file "render")
                (:file "controls")
+               (:file "labels")
+               (:file "scale")
                (:file "app"))
 
   :bundle-identifier "org.asdf-ios-app.solar-system"
