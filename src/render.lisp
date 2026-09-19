@@ -17,7 +17,9 @@
 ;;;; is a map, to the eye: the view direction is turned into the body's own
 ;;;; axes (rotation.lisp) to find the longitude and latitude it sees, so
 ;;;; each planet shows the face it has turned to the camera at that moment.
-;;;; Saturn's rings are a flat annulus in its equator.
+;;;; Rings are a flat annulus in the planet's equator: Saturn's from its
+;;;; map, with its own shadow across them and theirs across it; Uranus's
+;;;; drawn line by line at their radii.
 
 (in-package #:solar-system)
 
@@ -31,7 +33,8 @@ using namespace metal;
 
 struct Uniforms { float4x4 view; float4x4 proj; float2 viewport; float line_width; float pad; float4 sun; };
 
-// position.w: radius in pixels; extra: glow, texture index (-1 none);
+// position.w: radius in pixels; extra: glow, texture index (-1 none),
+// 1 if Saturn's rings are being drawn and shadow it;
 // ax ay az: the body's axes -- prime meridian, 90 east, north -- in view space.
 struct Disc { float4 position; float4 colour; float4 extra; float4 ax; float4 ay; float4 az; };
 
@@ -45,6 +48,7 @@ struct DiscVarying {
   float eye_z;
   float world_radius;
   float texture_index [[flat]];
+  float ring_shadow [[flat]];
   float3 ax [[flat]];
   float3 ay [[flat]];
   float3 az [[flat]];
@@ -52,10 +56,34 @@ struct DiscVarying {
 
 struct DiscOut { float4 colour [[color(0)]]; float depth [[depth(any)]]; };
 
+
+
 // Behind the camera: a point off screen, so the quad has no area.
 constant float4 nowhere = float4(2.0, 2.0, 0.5, 1.0);
 
 constexpr sampler map_sampler(filter::linear, mip_filter::linear, address::repeat);
+
+// A planet's rings: a square in its equatorial plane, cut to the annulus.
+// radii: inner, outer, the planet's radius (scene units), opacity.
+// mapping: the moon system's scene radius and its outermost moon's km, and
+// the rings' inner and outer km -- to undo the square-root scale moons are
+// drawn at, so that each gap falls where it is. style.x: 0 Saturn's map,
+// 1 Uranus's narrow rings, drawn from their radii.
+struct Ring { float4 centre; float4 ax; float4 ay; float4 radii; float4 mapping; float4 style; };
+
+// Scene distance from the planet's centre to where a ring at KM is drawn.
+float ring_radius(constant Ring &r, float km) { return r.mapping.x * sqrt(km / r.mapping.y); }
+
+// How much of the Sun a ring at scene radius RHO lets through: 1 - its opacity.
+float ring_opacity(constant Ring &r, float rho, texture2d<float> map)
+{
+  float km = r.mapping.y * (rho / r.mapping.x) * (rho / r.mapping.x);
+  float t = (km - r.mapping.z) / (r.mapping.w - r.mapping.z);
+  if (t < 0.0 || t > 1.0) return 0.0;
+  // An explicit level: this is called in a branch, where the derivatives
+  // an implicit one would use are undefined.
+  return map.sample(map_sampler, float2(t, 0.5), level(0.0)).a;
+}
 
 vertex DiscVarying disc_vertex(uint vid [[vertex_id]], uint iid [[instance_id]],
                                constant Disc *discs [[buffer(0)]],
@@ -66,6 +94,7 @@ vertex DiscVarying disc_vertex(uint vid [[vertex_id]], uint iid [[instance_id]],
   out.radius = d.position.w;
   out.glow = d.extra.x;
   out.texture_index = d.extra.y;
+  out.ring_shadow = d.extra.z;
   out.colour = d.colour;
   out.ax = d.ax.xyz; out.ay = d.ay.xyz; out.az = d.az.xyz;
   float4 eye = u.view * float4(d.position.xyz, 1.0);
@@ -96,7 +125,9 @@ vertex DiscVarying disc_vertex(uint vid [[vertex_id]], uint iid [[instance_id]],
 // add light with an alpha of zero.
 fragment DiscOut disc_fragment(DiscVarying in [[stage_in]],
                                constant Uniforms &u [[buffer(1)]],
-                               array<texture2d<float>, 10> maps [[texture(0)]])
+                               constant Ring &saturn [[buffer(2)]],
+                               array<texture2d<float>, 10> maps [[texture(0)]],
+                               texture2d<float> ring_map [[texture(10)]])
 {
   float d = length(in.local);
   float cover = 1.0 - smoothstep(in.radius - 0.75, in.radius + 0.75, d);
@@ -113,8 +144,28 @@ fragment DiscOut disc_fragment(DiscVarying in [[stage_in]],
     float lod = max(0.0, log2(1024.0 / max(1.0, M_PI_F * in.radius)));
     rgb = maps[index].sample(map_sampler, uv, level(lod)).rgb;
   }
+  // Saturn under its rings: follow the sunlight back from this point on
+  // the sphere to where it crossed the ring plane -- the equator, z = 0 in
+  // the planet's own axes -- and dim by the rings' opacity there, averaged
+  // over the stretch of ring this pixel covers. Near Saturn's equinoxes the
+  // Sun is almost in the ring plane and that stretch is long: sampled once,
+  // the edges of the shadow would be stairs. (The flag is the same over the
+  // whole disc, so the derivatives here are sound.)
+  float shadow = 0.0;
+  if (in.ring_shadow > 0.5) {
+    float3 b = float3(dot(n, in.ax), dot(n, in.ay), dot(n, in.az)) * saturn.radii.z;
+    float3 s = float3(dot(in.light, in.ax), dot(in.light, in.ay), dot(in.light, in.az));
+    float t = abs(s.z) > 1e-4 ? -b.z / s.z : -1.0;
+    float rho = length(b.xy + max(t, 0.0) * s.xy);
+    float width = fwidth(rho);
+    float opacity = 0.0;
+    for (int k = 0; k < 4; k++) {
+      opacity += ring_opacity(saturn, rho + (float(k) - 1.5) * 0.25 * width, ring_map);
+    }
+    shadow = t > 0.0 ? 0.9 * opacity / 4.0 : 0.0;
+  }
   if (in.glow == 0.0) {
-    rgb *= 0.05 + 0.95 * saturate(dot(n, in.light));
+    rgb *= 0.05 + 0.95 * saturate(dot(n, in.light)) * (1.0 - shadow);
   }
   DiscOut out;
   out.colour = float4(rgb * cover, cover);
@@ -132,12 +183,6 @@ fragment DiscOut disc_fragment(DiscVarying in [[stage_in]],
   return out;
 }
 
-// Saturn's rings: a square in the planet's equatorial plane, cut to the
-// annulus. radii: inner, outer, the planet's radius (scene units), opacity.
-// mapping: the moon system's scene radius and its outermost moon's km, and
-// the ring map's inner and outer km -- to undo the square-root scale moons
-// are drawn at, so that each gap falls where it is.
-struct Ring { float4 centre; float4 ax; float4 ay; float4 radii; float4 mapping; };
 
 struct RingVarying { float4 position [[position]]; float2 plane; float3 world; };
 
@@ -154,6 +199,12 @@ vertex RingVarying ring_vertex(uint vid [[vertex_id]],
   return out;
 }
 
+// Uranus's ten main rings, inside out: 6, 5, 4, alpha, beta, eta, gamma,
+// delta, lambda, epsilon; km from the planet's centre (Voyager 2). All are
+// narrow -- epsilon, the widest, is under a hundred km -- and very dark.
+constant float uranus_rings[10] = { 41837.0, 42234.0, 42571.0, 44718.0, 45661.0,
+                                    47176.0, 47627.0, 48300.0, 50024.0, 51149.0 };
+
 fragment float4 ring_fragment(RingVarying in [[stage_in]],
                               constant Ring &r [[buffer(0)]],
                               constant Uniforms &u [[buffer(1)]],
@@ -161,10 +212,24 @@ fragment float4 ring_fragment(RingVarying in [[stage_in]],
 {
   float rho = length(in.plane);
   if (rho < r.radii.x || rho > r.radii.y) discard_fragment();
-  float km = r.mapping.y * pow(rho / r.mapping.x, 2.0);
-  float t = (km - r.mapping.z) / (r.mapping.w - r.mapping.z);
-  if (t < 0.0 || t > 1.0) discard_fragment();
-  float4 c = map.sample(map_sampler, float2(t, 0.5));
+  float4 c;
+  if (r.style.x > 0.5) {
+    // Each ring a line at its radius, a pixel or so wide however far away:
+    // their true widths would vanish.
+    float pixel = max(fwidth(rho), 1e-7);
+    float cover = 0.0;
+    for (int i = 0; i < 10; i++) {
+      float line = 1.0 - smoothstep(0.4, 1.4, abs(rho - ring_radius(r, uranus_rings[i])) / pixel);
+      cover = max(cover, line * (i == 9 ? 0.9 : 0.55));
+    }
+    if (cover < 0.01) discard_fragment();
+    c = float4(0.62, 0.64, 0.68, cover);
+  } else {
+    float km = r.mapping.y * pow(rho / r.mapping.x, 2.0);
+    float t = (km - r.mapping.z) / (r.mapping.w - r.mapping.z);
+    if (t < 0.0 || t > 1.0) discard_fragment();
+    c = map.sample(map_sampler, float2(t, 0.5));
+  }
   // In the planet's shadow if the way to the Sun passes through it.
   float3 to_sun = normalize(u.sun.xyz - in.world);
   float3 from_centre = in.world - r.centre.xyz;
@@ -259,7 +324,7 @@ orbits in the scene, the moons' relative to their planets.")
 (defparameter +uniform-bytes+ 160)
 (defparameter +disc-floats+ 24)
 (defvar *ring-pipeline* nil)
-(defvar *ring-data* nil)      ; 20 floats: see struct Ring
+(defvar *ring-data* '() "Ringed planet -> its 24 floats (struct Ring), allocated once.")
 (defvar *depth-writing* nil "Depth test and write: the bodies and the rings.")
 (defvar *depth-testing* nil "Depth test only: the orbits, which bodies hide.")
 (defvar *maps* (make-array 10 :initial-element nil) "The planet maps, by texture index.")
@@ -271,8 +336,10 @@ orbits in the scene, the moons' relative to their planets.")
     ("Uranus" . "uranus") ("Neptune" . "neptune"))
   "Body and map, in texture order: Solar System Scope's, CC BY 4.0.")
 
-(defparameter +saturn-ring-km+ '(74500d0 . 140220d0)
-  "The inner and outer edge of the ring map: the C ring's inside to the F ring.")
+(defparameter +rings+
+  '(("Saturn" 0 74500d0 140220d0)       ; the map's edges: the C ring's inside to the F ring
+    ("Uranus" 1 41700d0 51300d0))       ; just inside ring 6 to just outside epsilon
+  "Ringed planets: name, style (0 map, 1 radii in the shader), inner and outer km.")
 (defvar *failure* nil "The condition that stopped drawing, if one has.")
 
 (defun nothing-p (object)
@@ -377,7 +444,8 @@ alpha into PIXEL-FORMAT."
             *ring-pipeline* (make-pipeline library "ring_vertex" "ring_fragment" pixel-format samples)
             *depth-writing* (depth-state 3 t)     ; less or equal
             *depth-testing* (depth-state 3 nil)
-            *ring-data* (cffi:foreign-alloc :float :count 20)
+            *ring-data* (loop for (name) in +rings+
+                              collect (cons (find-planet name) (cffi:foreign-alloc :float :count 24)))
             *orbit-buffer* (objc:invoke *device* "newBufferWithLength:options:"
                                         (* 16 orbits (1+ +segments+)) 0)
             *uniforms* (cffi:foreign-alloc :float :count (/ +uniform-bytes+ 4))
@@ -517,9 +585,10 @@ outside it, and Saturn's rings inside Mimas."
                          (+ (* (aref r 6) x) (* (aref r 7) y) (* (aref r 8) z)))))
           (multiple-value-call #'values (turn ax ay az) (turn bx by bz) (turn cx cy cz)))))))
 
-(defun fill-discs (placed tc)
+(defun fill-discs (placed tc ringed)
   "The bodies into *DISCS*, farthest from the camera first, so that nearer
-ones blend over them at their edges."
+ones blend over them at their edges. RINGED: the planets whose rings are
+drawn; Saturn's shadow it."
   (loop for (nil body x y z radius alpha) in (sort (copy-list placed) #'< :key #'first)
         for slot from 0
         for base = (* +disc-floats+ slot)
@@ -528,31 +597,37 @@ ones blend over them at their edges."
         do (store-floats *discs* base
                          x y z radius
                          (aref colour 0) (aref colour 1) (aref colour 2) alpha
-                         (if (eq body +sun+) 1 0) index 0 0)
+                         (if (eq body +sun+) 1 0) index
+                         (if (and (member body ringed) (string= (body-name body) "Saturn")) 1 0)
+                         0)
            (multiple-value-bind (ax ay az bx by bz cx cy cz)
                (if (>= index 0) (view-axes body tc) (values 1d0 0d0 0d0 0d0 1d0 0d0 0d0 0d0 1d0))
              (store-floats *discs* (+ base 12) ax ay az 0 bx by bz 0 cx cy cz 0)))
   (length placed))
 
-(defun fill-ring (systems tc)
-  "Saturn's rings into *RING-DATA*, at the moon system's scale; their
-opacity, the system's. Values T if they are to be drawn."
-  (let* ((saturn (find-planet "Saturn"))
-         (system (rest (assoc saturn systems)))
-         (scale (rest (assoc saturn *scales*))))
-    (when (and system scale *ring-map* (> (fourth system) 0.01d0))
-      (destructuring-bind (px py pz alpha on-screen) system
-        (declare (ignore on-screen))
-        (destructuring-bind (radius . outermost) scale
-          (let ((outermost-km (* outermost +km-per-au+)))
-            (flet ((to-scale (km) (* radius (sqrt (/ km outermost-km)))))
-              (multiple-value-bind (ax ay az bx by bz) (body-axes saturn tc)
-                (store-floats *ring-data* 0
-                              px py pz 1  ax ay az 0  bx by bz 0
-                              (to-scale (car +saturn-ring-km+)) (to-scale (cdr +saturn-ring-km+))
-                              (to-scale (body-radius-km saturn)) alpha
-                              radius outermost-km (car +saturn-ring-km+) (cdr +saturn-ring-km+))
-                t))))))))
+(defun fill-rings (systems tc)
+  "Each ringed planet's rings into its block of *RING-DATA*, at its moon
+system's scale; their opacity, the system's. The planets whose rings are
+to be drawn."
+  (loop for (name style inner outer) in +rings+
+        for planet = (find-planet name)
+        for block = (rest (assoc planet *ring-data*))
+        for system = (rest (assoc planet systems))
+        for scale = (rest (assoc planet *scales*))
+        when (and block system scale (> (fourth system) 0.01d0) (or (= style 1) *ring-map*))
+          collect (destructuring-bind (px py pz alpha on-screen) system
+                    (declare (ignore on-screen))
+                    (destructuring-bind (radius . outermost) scale
+                      (let ((outermost-km (* outermost +km-per-au+)))
+                        (flet ((to-scale (km) (* radius (sqrt (/ km outermost-km)))))
+                          (multiple-value-bind (ax ay az bx by bz) (body-axes planet tc)
+                            (store-floats block 0
+                                          px py pz 1  ax ay az 0  bx by bz 0
+                                          (to-scale inner) (to-scale outer)
+                                          (to-scale (body-radius-km planet)) alpha
+                                          radius outermost-km inner outer
+                                          style 0 0 0)
+                            planet)))))))
 
 (defun fill-orbit-info (systems sun)
   "Each orbit's colour, opacity and centre: the Sun's family round the Sun,
@@ -656,15 +731,15 @@ within REACH points of its disc, or NIL."
              (k (compression tc))
              (orbits (length (orbiters)))
              (discs 0)
-             (ring nil))
+             (ringed '()))
         (ensure-orbits tc k)
         (ensure-moon-orbits tc)
         (multiple-value-bind (placed systems sun)
             (place-bodies tc k aspect height pixels-per-point)
           (setf *last-placed* placed)
           (follow-focus placed)
-          (setf discs (fill-discs placed tc)
-                ring (fill-ring systems tc))
+          (setf ringed (fill-rings systems tc)
+                discs (fill-discs placed tc ringed))
           (fill-orbit-info systems sun)
           (store-matrix *uniforms* 0 (view-matrix *camera* aspect))
           (store-matrix *uniforms* 16 (projection-matrix *camera* aspect))
@@ -683,16 +758,22 @@ within REACH points of its disc, or NIL."
                            (* 4 +disc-floats+ discs) 0)
               (objc:invoke encoder "setVertexBytes:length:atIndex:" *uniforms* +uniform-bytes+ 1)
               (objc:invoke encoder "setFragmentBytes:length:atIndex:" *uniforms* +uniform-bytes+ 1)
+              ;; Saturn's rings, for the shadow they cast on it.
+              (objc:invoke encoder "setFragmentBytes:length:atIndex:"
+                           (rest (first *ring-data*)) 96 2)
+              (objc:invoke encoder "setFragmentTexture:atIndex:" (or *ring-map* (aref *maps* 0)) 10)
               (dotimes (i (length *maps*))
                 (objc:invoke encoder "setFragmentTexture:atIndex:" (aref *maps* i) i))
               (objc:invoke encoder "drawPrimitives:vertexStart:vertexCount:instanceCount:"
                            4 0 4 discs)
-              (when ring
+              (when ringed
                 (objc:invoke encoder "setRenderPipelineState:" *ring-pipeline*)
-                (objc:invoke encoder "setVertexBytes:length:atIndex:" *ring-data* 80 0)
-                (objc:invoke encoder "setFragmentBytes:length:atIndex:" *ring-data* 80 0)
-                (objc:invoke encoder "setFragmentTexture:atIndex:" *ring-map* 0)
-                (objc:invoke encoder "drawPrimitives:vertexStart:vertexCount:" 4 0 4))
+                (objc:invoke encoder "setFragmentTexture:atIndex:" (or *ring-map* (aref *maps* 0)) 0)
+                (dolist (planet ringed)
+                  (let ((block (rest (assoc planet *ring-data*))))
+                    (objc:invoke encoder "setVertexBytes:length:atIndex:" block 96 0)
+                    (objc:invoke encoder "setFragmentBytes:length:atIndex:" block 96 0)
+                    (objc:invoke encoder "drawPrimitives:vertexStart:vertexCount:" 4 0 4))))
               ;; Orbits: a quad (triangle strip of 4) per segment.
               (objc:invoke encoder "setDepthStencilState:" *depth-testing*)
               (objc:invoke encoder "setRenderPipelineState:" *orbit-pipeline*)

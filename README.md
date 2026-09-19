@@ -26,7 +26,10 @@ right now, in Common Lisp on iOS. It uses ECL through
   planets and the Moon are textured from Solar System Scope's maps
   (solarsystemscope.com/textures, CC BY 4.0). The dwarf planets are left
   untextured because their published maps are invented. Saturn's rings sit in
-  its equatorial plane, and Saturn's shadow falls across them.
+  its equatorial plane. Saturn's shadow falls across the rings, and the rings'
+  shadow falls on Saturn, with gaps like the Cassini Division letting light
+  through. Uranus's ten main rings are drawn at their true radii from Voyager
+  2, in the same plane as its moons' orbits.
 - **Events**: solar and lunar eclipses, transits of Mercury and Venus,
   oppositions, and conjunctions closer than 0.5° are found in the same
   ephemeris by a background search. They're tested against NASA's eclipse canon
