@@ -18,7 +18,15 @@
                         (when (uiop:getenv "SOLAR_REPL") '("slynk")))
   :pathname "src/"
   :components ((:file "app-package")
-               (:file "render")
+               ;; The renderer, state first (gpu-state.lisp says what is where).
+               (:file "gpu-state")
+               (:file "shaders")
+               (:file "metal")
+               (:file "belt")
+               (:file "bodies")
+               (:file "orbits")
+               (:file "view")
+               (:file "frame")
                (:file "trails")
                (:file "sky")
                (:file "controls")
