@@ -16,7 +16,7 @@
 (defparameter +state-key+ "SolarSystemState")
 (defparameter +state-version+ 1)
 
-(defvar *toggles* '(*labels-on* *true-scale* *trails-on*)
+(defvar *toggles* '(*labels-on* *true-scale* *trails-on* *sky-mode*)
   "Boolean settings saved as they are. Features add theirs.")
 (defvar *saved-state* nil "The text last written, to write only on a change.")
 
@@ -80,6 +80,7 @@
           (replace (solar-system.core::camera-target *camera*) (mapcar (lambda (x) (float x 1d0)) target))
           (setf (camera-zoom *camera*) (float (or (getf state :zoom) 1d0) 1d0))))
       (setf *focus* (and (getf state :focus) (find-body (getf state :focus))))
+      (when *sky-mode* (enter-sky :keep-camera t))
       (if (getf state :real-time)
           (real-time)
           (set-sim-date (float (getf state :jd) 1d0)))

@@ -30,8 +30,9 @@
    #:*field-of-view* #:camera #:make-camera #:reset-camera #:camera-zoom
    #:turn-camera #:zoom-camera #:pan-camera #:camera-distance #:fit-distance
    #:view-position #:view-matrix #:projection-matrix
+   #:camera-mode #:camera-field-of-view #:*centre-field-of-view* #:look-along
    ;; events
    #:event #:event-jd #:event-kind #:event-title #:event-utc #:find-events
-   #:events-in-chunk #:chunk-start #:+chunk-days+
+   #:events-in-chunk #:chunk-start #:+chunk-days+ #:eclipse-surface-point
    ;; rotation
    #:body-axes #:body-longitude-latitude #:obliquity-of #:geocentric #:earth-position))

@@ -191,8 +191,14 @@ found or the window has changed, and name the event in view."
     (show-playing)
     (when (> (abs (- (event-utc event) *window-centre*)) (span-days))
       (centre-window (event-utc event)))
-    (when (member (event-kind event) '(:solar-eclipse :lunar-eclipse))
-      (focus-on (find-planet "Earth")))
+    ;; An eclipse: from outside, follow the Earth, where the Moon lines up;
+    ;; from the Earth, look at the Sun or the Moon it is happening to.
+    (setf *observer* (and *sky-mode* (eq (event-kind event) :solar-eclipse)
+                          (multiple-value-bind (lon lat) (eclipse-surface-point (event-jd event))
+                            (cons lon lat))))
+    (case (event-kind event)
+      (:solar-eclipse (focus-on (if *sky-mode* +sun+ (find-planet "Earth"))))
+      (:lunar-eclipse (focus-on (if *sky-mode* (find-body "Moon") (find-planet "Earth")))))
     (setf *shown-event* nil)
     (show-event-name)))
 

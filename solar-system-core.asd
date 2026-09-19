@@ -20,8 +20,8 @@
                (:file "moons")
                (:file "projection")
                (:file "camera")
-               (:file "events")
-               (:file "rotation"))
+               (:file "rotation")
+               (:file "events"))
   :in-order-to ((test-op (test-op "solar-system-core/test"))))
 
 (defsystem "solar-system-core/test"

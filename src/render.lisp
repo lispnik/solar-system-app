@@ -34,7 +34,8 @@ using namespace metal;
 struct Uniforms { float4x4 view; float4x4 proj; float2 viewport; float line_width; float pad; float4 sun; };
 
 // position.w: radius in pixels; extra: glow, texture index (-1 none),
-// 1 if Saturn's rings are being drawn and shadow it;
+// 1 if Saturn's rings are being drawn and shadow it, 1 for the Moon seen
+// from the Earth, which the Earth's shadow can fall on;
 // ax ay az: the body's axes -- prime meridian, 90 east, north -- in view space.
 struct Disc { float4 position; float4 colour; float4 extra; float4 ax; float4 ay; float4 az; };
 
@@ -46,6 +47,8 @@ struct DiscVarying {
   float4 colour;
   float3 light;
   float eye_z;
+  float3 eye_centre;
+  float earth_shadow [[flat]];
   float world_radius;
   float texture_index [[flat]];
   float ring_shadow [[flat]];
@@ -72,13 +75,23 @@ constexpr sampler map_sampler(filter::linear, mip_filter::linear, address::repea
 struct Ring { float4 centre; float4 ax; float4 ay; float4 radii; float4 mapping; float4 style; };
 
 // Scene distance from the planet's centre to where a ring at KM is drawn.
-float ring_radius(constant Ring &r, float km) { return r.mapping.x * sqrt(km / r.mapping.y); }
+// style.y 1: to true scale, mapping x scene units a km of mapping y (the
+// view from Earth); else the square-root scale of a moon system.
+float ring_radius(constant Ring &r, float km)
+{
+  return r.style.y > 0.5 ? km * r.mapping.x / r.mapping.y : r.mapping.x * sqrt(km / r.mapping.y);
+}
+
+float ring_km(constant Ring &r, float rho)
+{
+  return r.style.y > 0.5 ? rho * r.mapping.y / r.mapping.x
+                         : r.mapping.y * (rho / r.mapping.x) * (rho / r.mapping.x);
+}
 
 // How much of the Sun a ring at scene radius RHO lets through: 1 - its opacity.
 float ring_opacity(constant Ring &r, float rho, texture2d<float> map)
 {
-  float km = r.mapping.y * (rho / r.mapping.x) * (rho / r.mapping.x);
-  float t = (km - r.mapping.z) / (r.mapping.w - r.mapping.z);
+  float t = (ring_km(r, rho) - r.mapping.z) / (r.mapping.w - r.mapping.z);
   if (t < 0.0 || t > 1.0) return 0.0;
   // An explicit level: this is called in a branch, where the derivatives
   // an implicit one would use are undefined.
@@ -100,6 +113,8 @@ vertex DiscVarying disc_vertex(uint vid [[vertex_id]], uint iid [[instance_id]],
   float4 eye = u.view * float4(d.position.xyz, 1.0);
   float4 clip = u.proj * eye;
   out.eye_z = eye.z;
+  out.eye_centre = eye.xyz;
+  out.earth_shadow = d.extra.w;
   // Pixels to scene units at this depth, for the sphere's depth below.
   out.world_radius = out.radius * (-eye.z) / (u.proj[1][1] * 0.5 * u.viewport.y);
   float extent = out.radius * (1.0 + 5.0 * out.glow) + 1.5;
@@ -164,8 +179,32 @@ fragment DiscOut disc_fragment(DiscVarying in [[stage_in]],
     }
     shadow = t > 0.0 ? 0.9 * opacity / 4.0 : 0.0;
   }
+  // The Moon seen from the Earth's centre, where the camera is: the axis
+  // of the Earth's shadow runs from the camera away from the Sun. Scene
+  // units here are AU. Umbra and penumbra as the event search has them,
+  // two per cent large for the atmosphere; in the umbra, the red of every
+  // sunset on Earth at once.
+  float3 tint = float3(1.0);
+  if (in.earth_shadow > 0.5) {
+    const float re = 6378.14 / 149597870.7, rs = 696000.0 / 149597870.7;
+    float3 p = in.eye_centre + in.world_radius * float3(n2, nz);
+    float3 sun = (u.view * float4(u.sun.xyz, 1.0)).xyz;
+    float ds = length(sun);
+    float3 axis = -sun / ds;
+    float x = dot(p, axis);
+    if (x > 0.0) {
+      float d = length(p - x * axis);
+      float umbra = 1.02 * (re - x * (rs - re) / ds);
+      float penumbra = 1.02 * (re + x * (rs + re) / ds);
+      if (d < umbra) {
+        tint = float3(0.30, 0.10, 0.06);
+      } else if (d < penumbra) {
+        tint = float3(mix(0.45, 1.0, (d - umbra) / (penumbra - umbra)));
+      }
+    }
+  }
   if (in.glow == 0.0) {
-    rgb *= 0.05 + 0.95 * saturate(dot(n, in.light)) * (1.0 - shadow);
+    rgb *= (0.05 + 0.95 * saturate(dot(n, in.light)) * (1.0 - shadow)) * tint;
   }
   DiscOut out;
   out.colour = float4(rgb * cover, cover);
@@ -225,8 +264,7 @@ fragment float4 ring_fragment(RingVarying in [[stage_in]],
     if (cover < 0.01) discard_fragment();
     c = float4(0.62, 0.64, 0.68, cover);
   } else {
-    float km = r.mapping.y * pow(rho / r.mapping.x, 2.0);
-    float t = (km - r.mapping.z) / (r.mapping.w - r.mapping.z);
+    float t = (ring_km(r, rho) - r.mapping.z) / (r.mapping.w - r.mapping.z);
     if (t < 0.0 || t > 1.0) discard_fragment();
     c = map.sample(map_sampler, float2(t, 0.5));
   }
@@ -328,6 +366,7 @@ orbits in the scene, the moons' relative to their planets.")
 (defvar *orbit-info* nil)   ; 12 floats a line: r g b a, centre x y z 0, style x y 0 0
 
 (defvar *camera* (make-camera))
+(defvar *sky-mode* nil "Seen from the Earth's centre (sky.lisp), or from outside.")
 (defvar *focus* nil "The body the camera follows, if any.")
 (defvar *last-placed* nil "PLACE-BODIES' answer for the last frame drawn.")
 (defvar *frame-count* 0)
@@ -464,6 +503,7 @@ alpha into PIXEL-FORMAT."
       ;; Every line starts clear, so a slot nothing has filled draws nothing.
       (dotimes (i (* 12 orbits)) (setf (cffi:mem-aref *orbit-info* :float i) 0.0))
       (load-maps)
+      (when *sky-mode* (store-sky-circles))
       (format t "SOLAR: Metal ready on ~a, ~dx MSAA; ~d orbits~%"
               (objc:ns-string-to-string (objc:invoke *device* "name")) samples orbits)
       (finish-output))))
@@ -525,7 +565,7 @@ second is twice a second."
 (defun pixels-per-unit (height depth)
   "Pixels per scene unit at view DEPTH (negative, in front of the camera),
 in a drawable HEIGHT pixels tall."
-  (/ (* 0.5d0 height) (tan (/ *field-of-view* 2)) (max 1d-9 (- depth))))
+  (/ (* 0.5d0 height) (tan (/ (camera-field-of-view *camera*) 2)) (max 1d-12 (- depth))))
 
 (defun place-bodies (tc k aspect height pixels-per-point)
   "Every body's scene position, depth, disc radius and opacity, as a list
@@ -611,35 +651,40 @@ drawn; Saturn's shadow it."
                          (aref colour 0) (aref colour 1) (aref colour 2) alpha
                          (if (eq body +sun+) 1 0) index
                          (if (and (member body ringed) (string= (body-name body) "Saturn")) 1 0)
-                         0)
+                         (if (and *sky-mode* (string= (body-name body) "Moon")) 1 0))
            (multiple-value-bind (ax ay az bx by bz cx cy cz)
                (if (>= index 0) (view-axes body tc) (values 1d0 0d0 0d0 0d0 1d0 0d0 0d0 0d0 1d0))
              (store-floats *discs* (+ base 12) ax ay az 0 bx by bz 0 cx cy cz 0)))
   (length placed))
 
 (defun fill-rings (systems tc)
-  "Each ringed planet's rings into its block of *RING-DATA*, at its moon
-system's scale; their opacity, the system's. The planets whose rings are
-to be drawn."
+  "Each ringed planet's rings into its block of *RING-DATA*: at its moon
+system's scale, seen from outside; at true scale from the Earth. Their
+opacity is the system's. The planets whose rings are to be drawn."
   (loop for (name style inner outer) in +rings+
         for planet = (find-planet name)
         for block = (rest (assoc planet *ring-data*))
         for system = (rest (assoc planet systems))
         for scale = (rest (assoc planet *scales*))
-        when (and block system scale (> (fourth system) 0.01d0) (or (= style 1) *ring-map*))
+        when (and block system (or scale *sky-mode*) (> (fourth system) 0.01d0)
+                  (or (= style 1) *ring-map*))
           collect (destructuring-bind (px py pz alpha on-screen) system
                     (declare (ignore on-screen))
-                    (destructuring-bind (radius . outermost) scale
-                      (let ((outermost-km (* outermost +km-per-au+)))
-                        (flet ((to-scale (km) (* radius (sqrt (/ km outermost-km)))))
-                          (multiple-value-bind (ax ay az bx by bz) (body-axes planet tc)
-                            (store-floats block 0
-                                          px py pz 1  ax ay az 0  bx by bz 0
-                                          (to-scale inner) (to-scale outer)
-                                          (to-scale (body-radius-km planet)) alpha
-                                          radius outermost-km inner outer
-                                          style 0 0 0)
-                            planet)))))))
+                    (multiple-value-bind (to-scale map-x map-y linear)
+                        (if *sky-mode*
+                            (values (lambda (km) (/ km +km-per-au+)) 1d0 +km-per-au+ 1)
+                            (destructuring-bind (radius . outermost) scale
+                              (let ((outermost-km (* outermost +km-per-au+)))
+                                (values (lambda (km) (* radius (sqrt (/ km outermost-km))))
+                                        radius outermost-km 0))))
+                      (multiple-value-bind (ax ay az bx by bz) (body-axes planet tc)
+                        (store-floats block 0
+                                      px py pz 1  ax ay az 0  bx by bz 0
+                                      (funcall to-scale inner) (funcall to-scale outer)
+                                      (funcall to-scale (body-radius-km planet)) alpha
+                                      map-x map-y inner outer
+                                      style linear 0 0)
+                        planet)))))
 
 (defun store-line (slot r g b a cx cy cz &optional (fade 0) (width 0))
   (store-floats *orbit-info* (* 12 slot) r g b a cx cy cz 0 fade width 0 0))
@@ -647,7 +692,15 @@ to be drawn."
 (defun fill-orbit-info (systems sun)
   "Each orbit's colour, opacity and centre: the Sun's family round the Sun,
 the planets brighter than the dwarfs; each moon round its planet, as bright
-as its system is visible."
+as its system is visible. From the Earth, no orbits, but the ecliptic and
+the equator across the sky."
+  (when *sky-mode*
+    (dotimes (slot (length (orbiters))) (store-line slot 0 0 0 0 0 0 0))
+    (store-line (spare-slot 0) 0.85 0.75 0.45 0.35 0 0 0)
+    (store-line (spare-slot 1) 0.45 0.60 0.95 0.25 0 0 0)
+    (return-from fill-orbit-info))
+  (store-line (spare-slot 0) 0 0 0 0 0 0 0)
+  (store-line (spare-slot 1) 0 0 0 0 0 0 0)
   (destructuring-bind (sx sy sz) sun
     (loop for body in (heliocentric-bodies)
           for slot from 0
@@ -664,13 +717,17 @@ as its system is visible."
                          px py pz))))
 
 (defun follow-focus (placed)
-  "Keep the camera's target on the focused body, wherever it has moved."
+  "Keep the camera on the focused body, wherever it has moved: its target
+there, from outside; looking at it, from the Earth."
   (let ((entry (and *focus* (find *focus* placed :key #'second))))
     (when entry
       (destructuring-bind (depth body x y z &rest rest) entry
         (declare (ignore depth body rest))
-        (let ((target (solar-system.core::camera-target *camera*)))
-          (setf (aref target 0) x (aref target 1) y (aref target 2) z))))))
+        (if *sky-mode*
+            (let ((from (solar-system.core::camera-target *camera*)))
+              (look-along *camera* (- x (aref from 0)) (- y (aref from 1)) (- z (aref from 2))))
+            (let ((target (solar-system.core::camera-target *camera*)))
+              (setf (aref target 0) x (aref target 1) y (aref target 2) z)))))))
 
 (defun screen-metrics (view)
   "Values width and height in pixels, pixels per point, aspect, and the
@@ -707,6 +764,8 @@ within REACH points of its disc, or NIL."
 
 (defun focus-on (body)
   "Follow BODY; for a planet with moons, come close enough to see them."
+  (when *sky-mode*
+    (return-from focus-on (sky-focus-on body)))
   (setf *focus* body)
   (let ((scale (and body (rest (assoc body *scales*)))))
     ;; One without moons: near enough that its disc is a good size.
@@ -745,10 +804,13 @@ within REACH points of its disc, or NIL."
              (orbits (line-count))
              (discs 0)
              (ringed '()))
-        (ensure-orbits tc k)
-        (ensure-moon-orbits tc)
+        (unless *sky-mode*
+          (ensure-orbits tc k)
+          (ensure-moon-orbits tc))
         (multiple-value-bind (placed systems sun)
-            (place-bodies tc k aspect height pixels-per-point)
+            (if *sky-mode*
+                (place-bodies-from-earth tc aspect height pixels-per-point)
+                (place-bodies tc k aspect height pixels-per-point))
           (setf *last-placed* placed)
           (follow-focus placed)
           (setf ringed (fill-rings systems tc)

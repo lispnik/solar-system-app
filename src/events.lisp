@@ -305,3 +305,29 @@ through zero going either way -- not where it wraps round at 180."
 (defun event-utc (event)
   "The event's moment as a JD in UTC, for the clock."
   (- (event-jd event) (/ *delta-t* 86400d0)))
+
+;;; ------------------------------------------------------------------
+;;; where to stand
+
+(defun eclipse-surface-point (jd)
+  "Values the planetocentric east longitude and latitude, degrees, of the
+point of greatest eclipse at JD (TT): where the axis of the Moon's shadow
+meets the Earth's surface on the Moon's side -- or, where it misses, the
+point nearest it."
+  (let ((tc (jd-tc jd)) (km +km-per-au+))
+    (multiple-value-bind (sx sy sz) (geocentric +sun+ tc)
+      (multiple-value-bind (mx my mz) (lunar-position tc)
+        (let* ((sx (* km sx)) (sy (* km sy)) (sz (* km sz))
+               (mx (* km mx)) (my (* km my)) (mz (* km mz))
+               (ax (- mx sx)) (ay (- my sy)) (az (- mz sz))
+               (length (sqrt (+ (* ax ax) (* ay ay) (* az az))))
+               (ux (/ ax length)) (uy (/ ay length)) (uz (/ az length))
+               (along (- (+ (* mx ux) (* my uy) (* mz uz))))
+               (px (+ mx (* along ux))) (py (+ my (* along uy))) (pz (+ mz (* along uz)))
+               (miss (sqrt (+ (* px px) (* py py) (* pz pz))))
+               (back (if (< miss +earth-radius-km+)
+                         (sqrt (- (expt +earth-radius-km+ 2) (* miss miss)))
+                         0d0)))
+          ;; Back along the axis, towards the Moon, to the surface.
+          (body-longitude-latitude (find-planet "Earth") tc
+                                   (- px (* back ux)) (- py (* back uy)) (- pz (* back uz))))))))

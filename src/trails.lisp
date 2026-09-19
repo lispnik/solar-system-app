@@ -85,7 +85,9 @@ the clock passes them, the head every frame."
           for slot = (trail-slot index)
           for body = (trail-body trail)
           for colour = (body-colour body)
-          do (if (not *trails-on*)
+          do (if (or (not *trails-on*)
+                     ;; From the Earth's centre the Earth has no path to show.
+                     (and *sky-mode* (string= (body-name body) "Earth")))
                  (store-line slot 0 0 0 0 0 0 0)
                  (let* ((changed (advance-trail trail jd))
                         (points (trail-points trail))

@@ -448,3 +448,31 @@ kind, and nothing found that is not catalogued."
             (body-longitude-latitude (find-body "Moon") tc (- x) (- y) (- z))
           (is (< (abs longitude) 8.5d0) "Earth at lunar longitude ~,1f" longitude)
           (is (< (abs latitude) 7.5d0) "Earth at lunar latitude ~,1f" latitude))))))
+
+(test the-camera-at-the-centre
+  ;; Looking along a direction puts it in the middle of the screen, and a
+  ;; point at any distance along it there too; zoom narrows the view.
+  (let ((camera (make-camera)))
+    (setf (camera-mode camera) :centre)
+    (look-along camera 0.3d0 -0.8d0 0.1d0)
+    (dolist (distance '(0.0026d0 1d0 30d0))
+      (multiple-value-bind (x y) (on-screen camera 0.5d0 (* distance 0.3d0) (* distance -0.8d0) (* distance 0.1d0))
+        (is (and (< (abs x) 1d-9) (< (abs y) 1d-9)) "centred at ~a AU" distance)))
+    (multiple-value-bind (vx vy vz) (view-position camera 0.5d0 0d0 0d0 1d0)
+      (declare (ignore vx vz))
+      (is (plusp vy) "the ecliptic's north is up"))
+    (let ((wide (camera-field-of-view camera)))
+      (zoom-camera camera 10d0)
+      (is (< (abs (- (* 10 (camera-field-of-view camera)) wide)) 1d-12)))))
+
+(test where-to-see-an-eclipse
+  ;; NASA's points of greatest eclipse, geodetic; ours are planetocentric,
+  ;; which differs by up to a fifth of a degree in latitude.
+  (loop for (year month day latitude longitude) in '((2026 8 12 65.2d0 -25.2d0)
+                                                     (2024 4 8 25.3d0 -104.1d0)
+                                                     (2027 8 2 25.5d0 33.2d0))
+        do (let ((event (find-if (lambda (e) (< (abs (- (event-utc e) (jd-from-calendar year month day 12))) 0.6d0))
+                                 (events-of :solar-eclipse year (1+ year)))))
+             (multiple-value-bind (lon lat) (eclipse-surface-point (event-jd event))
+               (is (< (abs (- lat latitude)) 1d0) "~d: latitude ~,1f, not ~,1f" year lat latitude)
+               (is (< (abs (- lon longitude)) 1d0) "~d: longitude ~,1f, not ~,1f" year lon longitude)))))

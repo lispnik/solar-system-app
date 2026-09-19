@@ -11,16 +11,23 @@
 ;;;; is what makes a drag feel like turning a ball in your hand: each turn is
 ;;;; applied on the left, in view space, and the matrix is re-orthonormalised
 ;;;; so that a thousand small turns stay a rotation.
+;;;;
+;;;; A camera in :CENTRE mode sits at its target instead, and only turns:
+;;;; the view from somewhere, the Earth's centre, looking out. Its zoom
+;;;; narrows the field of view.
 
 (in-package #:solar-system.core)
 
-(defparameter *field-of-view* (* 30 +degrees+) "Vertical, in radians.")
+(defparameter *field-of-view* (* 30 +degrees+) "Vertical, in radians, orbiting.")
+(defparameter *centre-field-of-view* (* 60 +degrees+)
+  "Vertical, in radians, at zoom 1 in :CENTRE mode; zoom divides it.")
 
 (defstruct (camera (:constructor %make-camera))
   (rotation (identity-3) :type (simple-array double-float (9)))  ; row-major
   (target (make-array 3 :element-type 'double-float :initial-element 0d0)
    :type (simple-array double-float (3)))
-  (zoom 1d0 :type double-float))            ; 1 fits the scene; larger is closer
+  (zoom 1d0 :type double-float)            ; 1 fits the scene; larger is closer
+  (mode :orbit :type (member :orbit :centre)))
 
 (defun identity-3 ()
   (let ((m (make-array 9 :element-type 'double-float :initial-element 0d0)))
@@ -74,6 +81,12 @@
         (orthonormalize (multiply-3 (axis-rotation axis angle) (camera-rotation camera))))
   camera)
 
+(defun camera-field-of-view (camera)
+  "The vertical field of view, radians."
+  (if (eq (camera-mode camera) :centre)
+      (/ *centre-field-of-view* (camera-zoom camera))
+      *field-of-view*))
+
 (defun fit-distance (aspect)
   "How far from the target the camera must be for the unit disc to fit,
 with a margin, in a view of ASPECT (width / height)."
@@ -82,16 +95,22 @@ with a margin, in a view of ASPECT (width / height)."
     (/ 1.08d0 half)))
 
 (defun camera-distance (camera aspect)
-  (/ (fit-distance aspect) (camera-zoom camera)))
+  "How far the camera stands back from its target: nothing, at the centre."
+  (if (eq (camera-mode camera) :centre)
+      0d0
+      (/ (fit-distance aspect) (camera-zoom camera))))
 
 (defun zoom-camera (camera factor)
-  (setf (camera-zoom camera) (max 0.3d0 (min 400d0 (* (camera-zoom camera) factor))))
+  (setf (camera-zoom camera)
+        (if (eq (camera-mode camera) :centre)
+            (max 0.5d0 (min 2000d0 (* (camera-zoom camera) factor)))      ; 120 degrees to 0.03
+            (max 0.3d0 (min 400d0 (* (camera-zoom camera) factor)))))
   camera)
 
 (defun pan-camera (camera dx dy height-pixels aspect)
   "Move the scene by DX, DY pixels (y up) in a view HEIGHT-PIXELS tall: the
 target moves the other way, in the plane facing the camera."
-  (let* ((world-per-pixel (/ (* 2 (camera-distance camera aspect) (tan (/ *field-of-view* 2)))
+  (let* ((world-per-pixel (/ (* 2 (camera-distance camera aspect) (tan (/ (camera-field-of-view camera) 2)))
                              height-pixels))
          (r (camera-rotation camera))
          (target (camera-target camera)))
@@ -123,11 +142,13 @@ target moves the other way, in the plane facing the camera."
     m))
 
 (defun projection-matrix (camera aspect)
-  "Perspective, Metal's clip space (z from 0 to 1), column-major."
-  (let* ((distance (camera-distance camera aspect))
-         (near (* 0.01d0 distance))
-         (far (+ distance 4d0))
-         (f (/ 1d0 (tan (/ *field-of-view* 2))))
+  "Perspective, Metal's clip space (z from 0 to 1), column-major. At the
+centre: from a thousandth of the Moon's distance to past Eris."
+  (let* ((centre (eq (camera-mode camera) :centre))
+         (distance (camera-distance camera aspect))
+         (near (if centre 2d-6 (* 0.01d0 distance)))
+         (far (if centre 200d0 (+ distance 4d0)))
+         (f (/ 1d0 (tan (/ (camera-field-of-view camera) 2))))
          (m (make-array 16 :element-type 'double-float :initial-element 0d0)))
     (setf (aref m 0) (/ f aspect)
           (aref m 5) f
@@ -135,3 +156,19 @@ target moves the other way, in the plane facing the camera."
           (aref m 11) -1d0
           (aref m 14) (/ (* near far) (- near far)))
     m))
+
+(defun look-along (camera x y z)
+  "Turn CAMERA to look along the direction X Y Z, the ecliptic's north as
+near up as it can be."
+  (let* ((n (sqrt (+ (* x x) (* y y) (* z z))))
+         ;; View z points back at the viewer: against the direction looked.
+         (zx (- (/ x n))) (zy (- (/ y n))) (zz (- (/ z n)))
+         ;; x: up x z, up the ecliptic pole; y: z x x.
+         (ax (- zy)) (ay zx) (an (max 1d-12 (sqrt (+ (* ax ax) (* ay ay)))))
+         (xx (/ ax an)) (xy (/ ay an)) (xz 0d0)
+         (yx (- (* zy xz) (* zz xy))) (yy (- (* zz xx) (* zx xz))) (yz (- (* zx xy) (* zy xx)))
+         (r (camera-rotation camera)))
+    (setf (aref r 0) xx (aref r 1) xy (aref r 2) xz
+          (aref r 3) yx (aref r 4) yy (aref r 5) yz
+          (aref r 6) zx (aref r 7) zy (aref r 8) zz)
+    camera))

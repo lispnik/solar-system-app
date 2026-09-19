@@ -199,7 +199,7 @@ move the labels."
     row))
 
 (defun toggle-buttons ()
-  (list *labels-button* *trails-button* *scale-button*))
+  (list *labels-button* *trails-button* *sky-button* *scale-button*))
 
 (defun make-panel ()
   "The playback controls, on a dark blur."
@@ -246,6 +246,7 @@ move the labels."
       (objc:invoke column "setSpacing:" 6d0)
       (setf *labels-button* (icon-button "tag.fill" #'toggle-labels)
             *trails-button* (icon-button "scribble.variable" #'toggle-trails)
+            *sky-button* (icon-button "globe.americas" #'toggle-sky)
             *scale-button* (icon-button "ruler" #'toggle-scale))
       (dolist (view (list (row *play-button* *slider* *span-button*)
                           dates
@@ -306,21 +307,36 @@ are selector and argument, alternately, sent to it first."
     (objc:invoke recognizer "setTranslation:inView:" #(0d0 0d0) view)
     (values (float (aref moved 0) 1d0) (float (aref moved 1) 1d0))))
 
+(defun turn-by-drag (view dx dy)
+  "Turn the view as a drag of DX, DY points says: from outside, a fixed
+rate; from the Earth, so that the sky moves with the finger at any field of
+view -- and looking elsewhere stops following."
+  (if *sky-mode*
+      (let ((per-point (/ (camera-field-of-view *camera*)
+                          (/ (aref (objc:invoke view "bounds") 3) 1d0))))
+        (setf *focus* nil)
+        (turn-camera *camera* 1 (- (* per-point dx)))
+        (turn-camera *camera* 0 (- (* per-point dy))))
+      (progn
+        (turn-camera *camera* 1 (* *turn-per-point* dx))
+        (turn-camera *camera* 0 (* *turn-per-point* dy)))))
+
 (defun add-gestures (view)
   (setf *gesture-friend* (ui:keep (make-instance 'gesture-friend)))
   (add-gesture view "UIPanGestureRecognizer"
                (lambda (recognizer)
                  (multiple-value-bind (dx dy) (translation recognizer view)
-                   (turn-camera *camera* 1 (* *turn-per-point* dx))
-                   (turn-camera *camera* 0 (* *turn-per-point* dy))))
+                   (turn-by-drag view dx dy)))
                "setMaximumNumberOfTouches:" 1)
   (add-gesture view "UIPanGestureRecognizer"
                (lambda (recognizer)
                  (multiple-value-bind (dx dy) (translation recognizer view)
-                   (multiple-value-bind (height aspect scale) (drawable-metrics view)
-                     ;; Panning away from what is followed stops following it.
-                     (setf *focus* nil)
-                     (pan-camera *camera* (* dx scale) (- (* dy scale)) height aspect))))
+                   (if *sky-mode*
+                       (turn-by-drag view dx dy)
+                       (multiple-value-bind (height aspect scale) (drawable-metrics view)
+                         ;; Panning away from what is followed stops following it.
+                         (setf *focus* nil)
+                         (pan-camera *camera* (* dx scale) (- (* dy scale)) height aspect)))))
                "setMinimumNumberOfTouches:" 2
                "setDelegate:" *gesture-friend*)
   (add-gesture view "UIPinchGestureRecognizer"
@@ -337,8 +353,10 @@ are selector and argument, alternately, sent to it first."
                "setDelegate:" *gesture-friend*)
   (let ((double (add-gesture view "UITapGestureRecognizer"
                              (lambda (recognizer) (declare (ignore recognizer))
-                               (setf *focus* nil)
-                               (reset-camera *camera*))
+                               (if *sky-mode*
+                                   (reset-sky-view)
+                                   (progn (setf *focus* nil)
+                                          (reset-camera *camera*))))
                              "setNumberOfTapsRequired:" 2)))
     (let ((single (add-gesture view "UITapGestureRecognizer"
                                (lambda (recognizer)

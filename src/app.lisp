@@ -23,8 +23,9 @@ GET-UNIVERSAL-TIME is whole seconds."
 
 (defun update-clock ()
   (objc:invoke *clock-label* "setText:"
-               (format nil "~a~%~a~@[~%~a~]~@[~%following ~a~]~@[~%drawing stopped: ~a~]"
+               (format nil "~a~%~a~@[~%~a~]~@[~%~a~]~@[~%following ~a~]~@[~%drawing stopped: ~a~]"
                        (format-jd (sim-jd)) (describe-state) (describe-scale)
+                       (describe-observer)
                        (and *focus* (body-name *focus*)) *failure*)))
 
 (defun launch-time-scale ()

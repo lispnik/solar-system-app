@@ -20,6 +20,7 @@
   :components ((:file "app-package")
                (:file "render")
                (:file "trails")
+               (:file "sky")
                (:file "controls")
                (:file "labels")
                (:file "scale")

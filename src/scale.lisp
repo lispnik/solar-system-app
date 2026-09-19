@@ -15,6 +15,8 @@
 (defvar *scale-animation* nil "(from to start), while the exponent is moving.")
 
 (defun toggle-scale ()
+  ;; From the Earth everything is at true distance already.
+  (when *sky-mode* (return-from toggle-scale))
   (setf *true-scale* (not *true-scale*)
         *scale-animation* (list *radius-exponent*
                                 (if *true-scale* 1d0 +compressed-exponent+)
@@ -43,4 +45,5 @@
   "Show on the toggle buttons what the settings are, restored or not."
   (set-button-image *scale-button* (if *true-scale* "ruler.fill" "ruler"))
   (set-button-image *labels-button* (if *labels-on* "tag.fill" "tag"))
-  (set-button-image *trails-button* (if *trails-on* "scribble.variable" "scribble")))
+  (set-button-image *trails-button* (if *trails-on* "scribble.variable" "scribble"))
+  (show-sky-button))
