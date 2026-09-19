@@ -121,6 +121,15 @@ Coloured ticks along the scrubber mark events: gold for solar eclipses, red
 for lunar eclipses, white for transits, blue for oppositions, and green for
 conjunctions.
 
+## The icon
+
+```
+swift tools/make-icon.swift     # rewrites res/Icon.xcassets/AppIcon.appiconset/icon-1024.png
+```
+
+The icon is drawn with CoreGraphics in the app's own colours. The build
+compiles `res/Icon.xcassets` with `actool` (`:bundle-icon`).
+
 ## Refitting the moons
 
 ```

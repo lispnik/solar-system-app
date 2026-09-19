@@ -43,6 +43,8 @@
   :bundle-display-name "Solar System"
   :bundle-executable "solar"
   :bundle-orientations (:portrait :landscape-left :landscape-right)
+  ;; Drawn by tools/make-icon.swift.
+  :bundle-icon "res/Icon.xcassets"
   :bundle-status-bar-hidden t
   ;; Without this the root view controller decides, and it shows the bar.
   :bundle-info-plist (("UIViewControllerBasedStatusBarAppearance" . :false)
