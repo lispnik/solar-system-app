@@ -38,3 +38,8 @@
   (cond (*scale-animation* "changing scale")
         (*true-scale* "true distances")
         (t nil)))
+
+(defun sync-toggle-buttons ()
+  "Show on the toggle buttons what the settings are, restored or not."
+  (set-button-image *scale-button* (if *true-scale* "ruler.fill" "ruler"))
+  (set-button-image *labels-button* (if *labels-on* "tag.fill" "tag")))

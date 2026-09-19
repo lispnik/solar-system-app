@@ -82,4 +82,5 @@ any that would overlap one already placed; hide the rest."
 
 (defun toggle-labels ()
   (setf *labels-on* (not *labels-on*))
+  (set-button-image *labels-button* (if *labels-on* "tag.fill" "tag"))
   (update-labels))

@@ -23,6 +23,7 @@
                (:file "labels")
                (:file "scale")
                (:file "timeline")
+               (:file "persist")
                (:file "app"))
 
   :bundle-identifier "org.asdf-ios-app.solar-system"
