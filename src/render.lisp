@@ -240,7 +240,9 @@ fragment float4 ring_fragment(RingVarying in [[stage_in]],
   return float4(c.rgb * shade * a, a);
 }
 
-struct OrbitInfo { float4 colour; float4 centre; };  // centre: what the points are relative to
+// centre: what the points are relative to. style: x 1 to fade along the
+// line, oldest point clear, for a trail; y a width multiplier (0 for 1).
+struct OrbitInfo { float4 colour; float4 centre; float4 style; };
 
 struct OrbitVarying {
   float4 position [[position]];
@@ -263,10 +265,12 @@ vertex OrbitVarying orbit_vertex(uint vid [[vertex_id]], uint iid [[instance_id]
   float4 c0 = u.proj * (u.view * float4(centre + points[orbit * (SEGMENTS + 1) + k].xyz, 1.0));
   float4 c1 = u.proj * (u.view * float4(centre + points[orbit * (SEGMENTS + 1) + k + 1].xyz, 1.0));
   OrbitVarying out;
+  float4 style = orbits[orbit].style;
   out.colour = orbits[orbit].colour;
-  out.half_width = 0.5 * u.line_width;
+  if (style.x > 0.0) out.colour.a *= float(k + ((vid & 2) ? 1 : 0)) / float(SEGMENTS);
+  out.half_width = 0.5 * u.line_width * (style.y > 0.0 ? style.y : 1.0);
   out.across = 0.0;
-  if (c0.w <= 0.0 || c1.w <= 0.0 || out.colour.a <= 0.0) {
+  if (c0.w <= 0.0 || c1.w <= 0.0 || orbits[orbit].colour.a <= 0.0) {
     out.position = nowhere;
     return out;
   }
@@ -300,9 +304,15 @@ fragment float4 orbit_fragment(OrbitVarying in [[stage_in]])
 (defvar *disc-pipeline* nil)
 (defvar *view* nil "The MTKView.")
 
-;;; What goes round what. Orbits are drawn in this order: the Sun's family,
-;;; then the moons, each moon's orbit relative to its planet.
+;;; The lines drawn, each +SEGMENTS+ long, in slots of the one buffer: the
+;;; Sun's family's orbits, the moons' (relative to their planets), a trail
+;;; for each of the Sun's family, and spare slots for what comes after.
+(defparameter +spare-lines+ 16)
+
 (defun orbiters () (append (heliocentric-bodies) *moons*))
+(defun line-count () (+ (length (orbiters)) (length (heliocentric-bodies)) +spare-lines+))
+(defun trail-slot (index) (+ (length (orbiters)) index))
+(defun spare-slot (index) (+ (length (orbiters)) (length (heliocentric-bodies)) index))
 
 (defvar *orbit-buffer* nil
   "An MTLBuffer of float4, (+SEGMENTS+ + 1) per orbiter: the heliocentric
@@ -315,7 +325,7 @@ orbits in the scene, the moons' relative to their planets.")
 ;;; once. Metal copies them at encode time, so one block each is enough.
 (defvar *uniforms* nil)     ; 40 floats: view, projection, viewport w h, line width, pad, sun xyzw
 (defvar *discs* nil)        ; 12 floats a body: x y z radius, r g b a, glow 0 0 0
-(defvar *orbit-info* nil)   ; 8 floats an orbit: r g b a, centre x y z, 0
+(defvar *orbit-info* nil)   ; 12 floats a line: r g b a, centre x y z 0, style x y 0 0
 
 (defvar *camera* (make-camera))
 (defvar *focus* nil "The body the camera follows, if any.")
@@ -437,7 +447,7 @@ alpha into PIXEL-FORMAT."
                                             (format nil +shaders+ +segments+) nil))
            (pixel-format (objc:invoke view "colorPixelFormat"))
            (samples (objc:invoke view "sampleCount"))
-           (orbits (length (orbiters))))
+           (orbits (line-count)))
       (setf *queue* (objc:invoke *device* "newCommandQueue")
             *orbit-pipeline* (make-pipeline library "orbit_vertex" "orbit_fragment" pixel-format samples)
             *disc-pipeline* (make-pipeline library "disc_vertex" "disc_fragment" pixel-format samples)
@@ -450,7 +460,9 @@ alpha into PIXEL-FORMAT."
                                         (* 16 orbits (1+ +segments+)) 0)
             *uniforms* (cffi:foreign-alloc :float :count (/ +uniform-bytes+ 4))
             *discs* (cffi:foreign-alloc :float :count (* +disc-floats+ (1+ orbits)))
-            *orbit-info* (cffi:foreign-alloc :float :count (* 8 orbits)))
+            *orbit-info* (cffi:foreign-alloc :float :count (* 12 orbits)))
+      ;; Every line starts clear, so a slot nothing has filled draws nothing.
+      (dotimes (i (* 12 orbits)) (setf (cffi:mem-aref *orbit-info* :float i) 0.0))
       (load-maps)
       (format t "SOLAR: Metal ready on ~a, ~dx MSAA; ~d orbits~%"
               (objc:ns-string-to-string (objc:invoke *device* "name")) samples orbits)
@@ -629,6 +641,9 @@ to be drawn."
                                           style 0 0 0)
                             planet)))))))
 
+(defun store-line (slot r g b a cx cy cz &optional (fade 0) (width 0))
+  (store-floats *orbit-info* (* 12 slot) r g b a cx cy cz 0 fade width 0 0))
+
 (defun fill-orbit-info (systems sun)
   "Each orbit's colour, opacity and centre: the Sun's family round the Sun,
 the planets brighter than the dwarfs; each moon round its planet, as bright
@@ -637,18 +652,16 @@ as its system is visible."
     (loop for body in (heliocentric-bodies)
           for slot from 0
           for colour = (body-colour body)
-          do (store-floats *orbit-info* (* 8 slot)
-                           (aref colour 0) (aref colour 1) (aref colour 2)
-                           (if (member body *planets*) 0.45 0.3)
-                           sx sy sz 0)))
+          do (store-line slot (aref colour 0) (aref colour 1) (aref colour 2)
+                         (if (member body *planets*) 0.45 0.3)
+                         sx sy sz)))
   (loop for moon in *moons*
         for slot from (length (heliocentric-bodies))
         for colour = (body-colour (body-parent moon))
         do (destructuring-bind (px py pz alpha &rest rest) (rest (assoc (body-parent moon) systems))
              (declare (ignore rest))
-             (store-floats *orbit-info* (* 8 slot)
-                           (aref colour 0) (aref colour 1) (aref colour 2) (* 0.35d0 alpha)
-                           px py pz 0))))
+             (store-line slot (aref colour 0) (aref colour 1) (aref colour 2) (* 0.35d0 alpha)
+                         px py pz))))
 
 (defun follow-focus (placed)
   "Keep the camera's target on the focused body, wherever it has moved."
@@ -729,7 +742,7 @@ within REACH points of its disc, or NIL."
              (jd (sim-jd))
              (tc (centuries-since-j2000 (utc-to-tt jd)))
              (k (compression tc))
-             (orbits (length (orbiters)))
+             (orbits (line-count))
              (discs 0)
              (ringed '()))
         (ensure-orbits tc k)
@@ -741,6 +754,7 @@ within REACH points of its disc, or NIL."
           (setf ringed (fill-rings systems tc)
                 discs (fill-discs placed tc ringed))
           (fill-orbit-info systems sun)
+          (update-trails tc k sun)
           (store-matrix *uniforms* 0 (view-matrix *camera* aspect))
           (store-matrix *uniforms* 16 (projection-matrix *camera* aspect))
           (destructuring-bind (sx sy sz) sun
@@ -779,7 +793,7 @@ within REACH points of its disc, or NIL."
               (objc:invoke encoder "setRenderPipelineState:" *orbit-pipeline*)
               (objc:invoke encoder "setVertexBuffer:offset:atIndex:" *orbit-buffer* 0 0)
               (objc:invoke encoder "setVertexBytes:length:atIndex:" *uniforms* +uniform-bytes+ 1)
-              (objc:invoke encoder "setVertexBytes:length:atIndex:" *orbit-info* (* 32 orbits) 2)
+              (objc:invoke encoder "setVertexBytes:length:atIndex:" *orbit-info* (* 48 orbits) 2)
               (objc:invoke encoder "drawPrimitives:vertexStart:vertexCount:instanceCount:"
                            4 0 4 (* orbits +segments+))
               (objc:invoke encoder "endEncoding")

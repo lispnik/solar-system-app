@@ -186,14 +186,20 @@ move the labels."
     (objc:invoke view "setContentHuggingPriority:forAxis:" 1.0 0)
     view))
 
-(defun tools-row ()
-  "The labels toggle, the events -- the one before, the one in view, the
-one after -- and the scale toggle."
-  (row *labels-button*
-       (icon-button "chevron.left" #'previous-event)
+(defun events-row ()
+  "The events: the one before, the one in view, the one after."
+  (row (icon-button "chevron.left" #'previous-event)
        (make-event-button)
-       (icon-button "chevron.right" #'next-event)
-       *scale-button*))
+       (icon-button "chevron.right" #'next-event)))
+
+(defun tools-row ()
+  "The toggles, spread along the row."
+  (let ((row (apply #'row (toggle-buttons))))
+    (objc:invoke row "setDistribution:" 3)       ; equal spacing
+    row))
+
+(defun toggle-buttons ()
+  (list *labels-button* *trails-button* *scale-button*))
 
 (defun make-panel ()
   "The playback controls, on a dark blur."
@@ -239,10 +245,12 @@ one after -- and the scale toggle."
       (objc:invoke column "setAxis:" 1)
       (objc:invoke column "setSpacing:" 6d0)
       (setf *labels-button* (icon-button "tag.fill" #'toggle-labels)
+            *trails-button* (icon-button "scribble.variable" #'toggle-trails)
             *scale-button* (icon-button "ruler" #'toggle-scale))
       (dolist (view (list (row *play-button* *slider* *span-button*)
                           dates
                           (row *direction-button* *speed-control* now-button)
+                          (events-row)
                           (tools-row)))
         (objc:invoke column "addArrangedSubview:" view)))
     (objc:invoke (objc:invoke panel "contentView") "addSubview:" column)

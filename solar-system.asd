@@ -19,6 +19,7 @@
   :pathname "src/"
   :components ((:file "app-package")
                (:file "render")
+               (:file "trails")
                (:file "controls")
                (:file "labels")
                (:file "scale")

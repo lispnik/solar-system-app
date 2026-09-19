@@ -42,4 +42,5 @@
 (defun sync-toggle-buttons ()
   "Show on the toggle buttons what the settings are, restored or not."
   (set-button-image *scale-button* (if *true-scale* "ruler.fill" "ruler"))
-  (set-button-image *labels-button* (if *labels-on* "tag.fill" "tag")))
+  (set-button-image *labels-button* (if *labels-on* "tag.fill" "tag"))
+  (set-button-image *trails-button* (if *trails-on* "scribble.variable" "scribble")))

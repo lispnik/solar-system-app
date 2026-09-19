@@ -16,7 +16,7 @@
 (defparameter +state-key+ "SolarSystemState")
 (defparameter +state-version+ 1)
 
-(defvar *toggles* '(*labels-on* *true-scale*)
+(defvar *toggles* '(*labels-on* *true-scale* *trails-on*)
   "Boolean settings saved as they are. Features add theirs.")
 (defvar *saved-state* nil "The text last written, to write only on a change.")
 
