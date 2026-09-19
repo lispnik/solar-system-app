@@ -23,8 +23,10 @@
                (:file "sky")
                (:file "controls")
                (:file "labels")
+               (:file "pointer")
                (:file "scale")
                (:file "timeline")
+               (:file "card")
                (:file "persist")
                (:file "app"))
 
@@ -35,8 +37,11 @@
   :bundle-orientations (:portrait :landscape-left :landscape-right)
   :bundle-status-bar-hidden t
   ;; Without this the root view controller decides, and it shows the bar.
-  :bundle-info-plist (("UIViewControllerBasedStatusBarAppearance" . :false))
-  :bundle-frameworks ("UIKit" "Foundation" "CoreGraphics" "QuartzCore" "Metal" "MetalKit")
+  :bundle-info-plist (("UIViewControllerBasedStatusBarAppearance" . :false)
+                      ("NSLocationWhenInUseUsageDescription"
+                       . "To show the sky from where you are, when you hold the phone up to it."))
+  :bundle-frameworks ("UIKit" "Foundation" "CoreGraphics" "QuartzCore" "Metal" "MetalKit"
+                      "CoreLocation" "CoreMotion")
   ;; Planet maps from Solar System Scope (solarsystemscope.com/textures),
   ;; CC BY 4.0, scaled to 1024 x 512.
   :bundle-resources (("res/textures" . "textures")

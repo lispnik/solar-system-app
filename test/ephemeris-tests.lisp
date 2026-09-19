@@ -513,3 +513,90 @@ kind, and nothing found that is not catalogued."
   (loop for m in '(-50d0 -1d0 -0.001d0 0d0 0.3d0 7d0 200d0)
         do (let ((h (solar-system.core::solve-kepler-hyperbolic m 1.0001d0)))
              (is (< (abs (- (* 1.0001d0 (sinh h)) h m)) (* 1d-10 (max 1 (abs m))))))))
+
+;;; ------------------------------------------------------------------
+;;; standing on the Earth
+
+(defun sun-altitude-azimuth-meeus (lon lat jd-ut)
+  "The Sun's altitude and azimuth by the textbook route, independent of
+the app's Earth rotation: its geocentric right ascension and declination,
+Greenwich mean sidereal time (Meeus 12.4), the hour angle. Near J2000, so
+that the J2000 RA stands in for the RA of date."
+  (let ((tc (centuries-since-j2000 (utc-to-tt jd-ut))))
+    (multiple-value-bind (x y z) (geocentric +sun+ tc)
+      (let* ((eps (* 23.4392911d0 (/ pi 180)))
+             (yq (- (* y (cos eps)) (* z (sin eps))))
+             (zq (+ (* y (sin eps)) (* z (cos eps))))
+             (ra (atan yq x))
+             (dec (atan zq (sqrt (+ (* x x) (* yq yq)))))
+             (d (- jd-ut 2451545d0))
+             (gmst (* (mod (+ 280.46061837d0 (* 360.98564736629d0 d)) 360d0) (/ pi 180)))
+             (h (- (+ gmst (* lon (/ pi 180))) ra))
+             (phi (* lat (/ pi 180)))
+             (alt (asin (+ (* (sin phi) (sin dec)) (* (cos phi) (cos dec) (cos h)))))
+             (az (atan (- (sin h)) (- (* (tan dec) (cos phi)) (* (sin phi) (cos h))))))
+        (values (/ (* 180 alt) pi) (mod (/ (* 180 az) pi) 360d0))))))
+
+(test the-sun-in-the-sky
+  ;; Greenwich and Sydney, near J2000: the two routes agree.
+  (loop for (lon lat jd) in (list (list -0.0015d0 51.4779d0 (jd-from-calendar 2000 6 21 15))
+                                  (list 151.21d0 -33.87d0 (jd-from-calendar 2000 1 10 2)))
+        do (multiple-value-bind (alt az) (sun-altitude-azimuth-meeus lon lat jd)
+             (multiple-value-bind (x y z) (geocentric +sun+ (centuries-since-j2000 (utc-to-tt jd)))
+               (multiple-value-bind (a b) (altitude-azimuth lon lat (centuries-since-j2000 (utc-to-tt jd)) x y z)
+                 (is (< (abs (- a alt)) 0.1d0) "altitude ~,2f, not ~,2f" a alt)
+                 (is (< (abs (- b az)) 0.15d0) "azimuth ~,2f, not ~,2f" b az))))))
+
+(test pointing-the-phone-at-the-sun
+  ;; Build the attitude a phone would report when held up to the Sun --
+  ;; its back to it, its top towards the zenith -- and the camera made from
+  ;; it has the Sun in the middle of the screen, whatever way it is turned.
+  (let* ((lon -0.0015d0) (lat 51.4779d0)
+         (jd (jd-from-calendar 2000 6 21 15))
+         (tc (centuries-since-j2000 (utc-to-tt jd))))
+    (multiple-value-bind (alt az)
+        ;; The app's own altitude and azimuth -- THE-SUN-IN-THE-SKY checks
+        ;; those against the textbook; this checks the camera made from them.
+        (multiple-value-call #'altitude-azimuth lon lat tc (geocentric +sun+ tc))
+      (let* ((a (* alt (/ pi 180))) (z (* az (/ pi 180)))
+             ;; The Sun's direction in north-west-up; east is minus west.
+             (d (list (* (cos a) (cos z)) (- (* (cos a) (sin z))) (sin a)))
+             ;; The phone's z points back, towards the eye: away from the Sun.
+             (pz (mapcar #'- d))
+             ;; Its y as near straight up as can be; x = y cross z.
+             (up (list 0d0 0d0 1d0))
+             (along (reduce #'+ (mapcar #'* up pz)))
+             (py (let ((v (mapcar (lambda (u p) (- u (* along p))) up pz)))
+                   (let ((n (sqrt (reduce #'+ (mapcar #'* v v))))) (mapcar (lambda (c) (/ c n)) v))))
+             (px (list (- (* (second py) (third pz)) (* (third py) (second pz)))
+                       (- (* (third py) (first pz)) (* (first py) (third pz)))
+                       (- (* (first py) (second pz)) (* (second py) (first pz)))))
+             ;; Columns px py pz, row-major.
+             (m (coerce (list (first px) (first py) (first pz)
+                              (second px) (second py) (second pz)
+                              (third px) (third py) (third pz))
+                        '(simple-array double-float (9)))))
+        (multiple-value-bind (qx qy qz qw) (matrix-quaternion m)
+          (multiple-value-bind (sx sy sz) (geocentric +sun+ tc)
+            (dolist (turn (list 0d0 (/ pi 2) (- (/ pi 2)) pi))
+              (let ((r (device-camera-rotation qx qy qz qw lon lat tc turn)))
+                (flet ((row (i) (+ (* (aref r (* 3 i)) sx) (* (aref r (+ 1 (* 3 i))) sy)
+                                   (* (aref r (+ 2 (* 3 i))) sz))))
+                  (let ((n (sqrt (+ (* sx sx) (* sy sy) (* sz sz)))))
+                    (is (< (abs (/ (row 0) n)) 1d-9) "centred across, turned ~a" turn)
+                    (is (< (abs (/ (row 1) n)) 1d-9) "centred up and down, turned ~a" turn)
+                    (is (< (/ (row 2) n) -0.999d0) "in front, turned ~a" turn)))))))))))
+
+(test facts-about-bodies
+  (let ((tc (centuries-since-j2000 (jd-from-calendar 2026 9 18))))
+    (let ((earth (body-facts (find-planet "Earth") tc)))
+      (is (< 29.2d0 (getf earth :speed) 30.4d0) "the Earth at ~,2f km/s" (getf earth :speed)))
+    (let ((sun (body-facts +sun+ tc)))
+      (is (< 495 (getf sun :light) 505) "sunlight takes ~,1f s" (getf sun :light))
+      (is (< 1900 (getf sun :size) 1930) "the Sun is ~,0f arcseconds across" (getf sun :size)))
+    (let ((moon (body-facts (find-body "Moon") tc)))
+      (is (< 0.95d0 (getf moon :speed) 1.1d0) "the Moon at ~,3f km/s" (getf moon :speed))
+      (is (< 356000 (getf moon :parent-distance) 407000))))
+  ;; Full at the lunar eclipse of 2026-08-28, new at the solar of 2026-08-12.
+  (is (> (getf (body-facts (find-body "Moon") (centuries-since-j2000 (jd-from-calendar 2026 8 28 4 13))) :phase) 0.999d0))
+  (is (< (getf (body-facts (find-body "Moon") (centuries-since-j2000 (jd-from-calendar 2026 8 12 17 46))) :phase) 0.001d0)))

@@ -127,6 +127,7 @@ finger is on the scrubber."
 ephemeris, follow the date with the scrubber's window, move the thumb, and
 move the labels."
   (update-labels)
+  (update-compass-labels)
   (step-scale)
   (when *slider*
     (when (or (< jd +earliest-jd+) (> jd +latest-jd+))
@@ -208,7 +209,8 @@ move the labels."
     row))
 
 (defun toggle-buttons ()
-  (list *labels-button* *trails-button* *small-bodies-button* *sky-button* *scale-button*))
+  (list *labels-button* *trails-button* *small-bodies-button* *sky-button* *pointer-button*
+        *scale-button*))
 
 (defun make-panel ()
   "The playback controls, on a dark blur."
@@ -256,6 +258,7 @@ move the labels."
       (setf *labels-button* (icon-button "tag.fill" #'toggle-labels)
             *trails-button* (icon-button "scribble.variable" #'toggle-trails)
             *sky-button* (icon-button "globe.americas" #'toggle-sky)
+            *pointer-button* (icon-button "location.north.circle" #'toggle-pointing)
             *small-bodies-button* (icon-button "sparkles" #'toggle-small-bodies)
             *scale-button* (icon-button "ruler" #'toggle-scale))
       (dolist (view (list (row *play-button* *slider* *span-button*)
@@ -318,6 +321,8 @@ are selector and argument, alternately, sent to it first."
     (values (float (aref moved 0) 1d0) (float (aref moved 1) 1d0))))
 
 (defun turn-by-drag (view dx dy)
+  (when (and *pointing* (motion-available-p))
+    (return-from turn-by-drag))           ; the phone is turning the view
   "Turn the view as a drag of DX, DY points says: from outside, a fixed
 rate; from the Earth, so that the sky moves with the finger at any field of
 view -- and looking elsewhere stops following."

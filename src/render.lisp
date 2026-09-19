@@ -419,6 +419,8 @@ the CPU never writes one the GPU may still be reading.")
 (defvar *camera* (make-camera))
 (defvar *sky-mode* nil "Seen from the Earth's centre (sky.lisp), or from outside.")
 (defvar *small-bodies-on* t "The comets and the asteroid belt.")
+(defvar *pointing* nil "Stood where the phone is, the view turned with it (pointer.lisp).")
+(defvar *pointer-button* nil)
 (defvar *belt-pipeline* nil)
 (defvar *belt-buffer* nil "The asteroids' elements, eight floats each, from asteroids.bin.")
 (defvar *belt-count* 0)
@@ -862,11 +864,15 @@ there, from outside; looking at it, from the Earth."
     (when entry
       (destructuring-bind (depth body x y z &rest rest) entry
         (declare (ignore depth body rest))
-        (if *sky-mode*
+        (cond
+          ;; Held up to the sky, the phone turns the view, not the body.
+          (*pointing* nil)
+          (*sky-mode*
             (let ((from (solar-system.core::camera-target *camera*)))
-              (look-along *camera* (- x (aref from 0)) (- y (aref from 1)) (- z (aref from 2))))
+              (look-along *camera* (- x (aref from 0)) (- y (aref from 1)) (- z (aref from 2)))))
+          (t
             (let ((target (solar-system.core::camera-target *camera*)))
-              (setf (aref target 0) x (aref target 1) y (aref target 2) z)))))))
+              (setf (aref target 0) x (aref target 1) y (aref target 2) z))))))))
 
 (defun screen-metrics (view)
   "Values width and height in pixels, pixels per point, aspect, and the
@@ -947,6 +953,7 @@ within REACH points of its disc, or NIL."
         (unless *sky-mode*
           (ensure-orbits tc k)
           (ensure-moon-orbits tc))
+        (when *sky-mode* (point-camera tc))
         (multiple-value-bind (placed systems sun)
             (if *sky-mode*
                 (place-bodies-from-earth tc aspect height pixels-per-point)
@@ -959,6 +966,7 @@ within REACH points of its disc, or NIL."
           (fill-orbit-info systems sun)
           (update-trails tc k sun)
           (update-comet-lines tc k sun)
+          (update-horizon tc)
           (store-matrix *uniforms* 0 (view-matrix *camera* aspect))
           (store-matrix *uniforms* 16 (projection-matrix *camera* aspect))
           (destructuring-bind (sx sy sz) sun

@@ -47,4 +47,5 @@
   (set-button-image *labels-button* (if *labels-on* "tag.fill" "tag"))
   (set-button-image *trails-button* (if *trails-on* "scribble.variable" "scribble"))
   (show-sky-button)
+  (show-pointer-button)
   (show-small-bodies-button))

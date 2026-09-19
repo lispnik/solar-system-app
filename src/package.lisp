@@ -24,6 +24,9 @@
    #:*dwarfs* #:heliocentric-bodies #:find-body #:*moons* #:moons-of #:body-parent
    #:body-moon #:moon-offset #:moon-orbit-points #:lunar-position #:+km-per-au+
    #:*comets* #:body-comet #:comet-orbit-points #:comet-tail
+   ;; standing on the Earth
+   #:observer-position #:horizon-axes #:altitude-azimuth #:device-camera-rotation
+   #:matrix-quaternion #:body-facts #:centre-of
    ;; projection into the scene
    #:*radius-exponent* #:compression #:compress #:disc-radius
    #:moon-system-scales #:moon-display-offset

@@ -23,9 +23,9 @@ GET-UNIVERSAL-TIME is whole seconds."
 
 (defun update-clock ()
   (objc:invoke *clock-label* "setText:"
-               (format nil "~a~%~a~@[~%~a~]~@[~%~a~]~@[~%following ~a~]~@[~%drawing stopped: ~a~]"
+               (format nil "~a~%~a~@[~%~a~]~@[~%~a~]~@[~%~a~]~@[~%following ~a~]~@[~%drawing stopped: ~a~]"
                        (format-jd (sim-jd)) (describe-state) (describe-scale)
-                       (describe-observer)
+                       (describe-observer) *pointer-status*
                        (and *focus* (body-name *focus*)) *failure*)))
 
 (defun launch-time-scale ()
@@ -55,6 +55,7 @@ into its argument domain -- so a simulator launch can start the clock fast:
       (ui:pin view edge root edge))
     (add-gestures view)
     (make-labels root)
+    (make-compass-labels)
     (let ((panel (make-panel)))
       (objc:invoke root "addSubview:" panel)
       (ui:pin panel "leadingAnchor" safe "leadingAnchor" 12)
@@ -67,11 +68,13 @@ into its argument domain -- so a simulator launch can start the clock fast:
     (objc:invoke root "addSubview:" *clock-label*)
     (ui:pin *clock-label* "topAnchor" safe "topAnchor" 8)
     (ui:pin *clock-label* "leadingAnchor" safe "leadingAnchor" 16)
+    (make-card root)
     (update-clock)
     (sync-toggle-buttons)
     (let ((ticks 0))
       (ui:after-every 0.25d0 (lambda (timer) (declare (ignore timer))
                                (update-clock)
+                               (update-card)
                                (update-timeline)
                                (when (zerop (mod (incf ticks) 8))
                                  (save-state)))))

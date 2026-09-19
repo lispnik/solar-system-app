@@ -181,6 +181,7 @@ outer planets come to opposition."
   (show-sky-button))
 
 (defun leave-sky ()
+  (when *pointing* (stop-pointing))
   (setf *sky-mode* nil *observer* nil)
   (if *outside-camera*
       (setf *camera* *outside-camera* *outside-camera* nil)
@@ -200,5 +201,6 @@ outer planets come to opposition."
     (set-button-image *sky-button* (if *sky-mode* "globe.americas.fill" "globe.americas"))))
 
 (defun reset-sky-view ()
+  (when *pointing* (stop-pointing))
   (setf *focus* nil *observer* nil)
   (look-at-midnight))

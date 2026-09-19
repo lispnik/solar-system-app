@@ -22,7 +22,8 @@
                (:file "camera")
                (:file "rotation")
                (:file "events")
-               (:file "comets"))
+               (:file "comets")
+               (:file "observer"))
   :in-order-to ((test-op (test-op "solar-system-core/test"))))
 
 (defsystem "solar-system-core/test"

@@ -88,6 +88,18 @@ Moon turning red in Earth's shadow. A solar eclipse moves you to the point on
 Earth where it is greatest, matching NASA's published points to within a
 degree, and keeps you there as Earth turns.
 
+Tap any body to follow it, and a card under the clock shows its distances from
+the Sun and from Earth, how long its light takes to reach us, its speed and
+size, and the next event it takes part in. In the Earth view the card also
+shows how much of it is lit, its angle from the Sun and its apparent size.
+
+The location button (in the Earth view) puts you where the phone is and turns
+the view as you hold the phone up to the sky, using Core Location and Core
+Motion's true-north attitude. A horizon line and compass points are drawn, and
+the card gives the followed body's altitude and azimuth. In the simulator,
+which has no motion sensors, the location is still used and you drag to look
+around.
+
 The app remembers where it was left: the date (or now, if it was left at real
 time), the speed, the toggles, the camera and what it was following.
 
