@@ -1,9 +1,37 @@
 # Solar System
 
-The Sun and the eight planets seen from above the ecliptic, where they are
-right now, in Common Lisp on iOS. It uses ECL through
-[asdf-ios-app](../asdf-ios-app), with UIKit and Metal reached through
+The Solar System in Common Lisp on iOS: the Sun, the planets, the dwarf
+planets, the major moons, comets and the asteroid belt. Everything is where it
+really is, at any date from 3000 BC to 3000 AD. You can see it in 3D from
+outside or from the Earth, and point the phone at the real sky. It uses ECL
+through [asdf-ios-app](../asdf-ios-app), with UIKit and Metal reached through
 [objc](../objc).
+
+<table>
+<tr>
+  <td width="33%"><img src="doc/screenshots/01-overview.jpg" alt="Now: planets, dwarf planets, comets and the asteroid belt; ticks along the scrubber mark the events of the next and last ten years."><br><sub>Now: planets, dwarf planets, comets and the asteroid belt; ticks along the scrubber mark the events of the next and last ten years.</sub></td>
+  <td width="33%"><img src="doc/screenshots/02-moving.jpg" alt="At a month a second, tilted, each body leaving a fading trail."><br><sub>At a month a second, tilted, each body leaving a fading trail.</sub></td>
+  <td width="33%"><img src="doc/screenshots/03-saturn.jpg" alt="Saturn in 2032, its rings open, its shadow across them, five of its moons, and its card."><br><sub>Saturn in 2032, its rings open, its shadow across them, five of its moons, and its card.</sub></td>
+</tr>
+<tr>
+  <td width="33%"><img src="doc/screenshots/04-jupiter.jpg" alt="Jupiter and the Galilean moons, followed: 50 light-minutes away, at opposition next February."><br><sub>Jupiter and the Galilean moons, followed: 50 light-minutes away, at opposition next February.</sub></td>
+  <td width="33%"><img src="doc/screenshots/05-earth-moon.jpg" alt="The Earth and the Moon, Venus beyond."><br><sub>The Earth and the Moon, Venus beyond.</sub></td>
+  <td width="33%"><img src="doc/screenshots/06-solar-eclipse.jpg" alt="The total solar eclipse of 12 August 2026, from its point of greatest eclipse, 65.1°N 25.1°W."><br><sub>The total solar eclipse of 12 August 2026, from its point of greatest eclipse, 65.1°N 25.1°W.</sub></td>
+</tr>
+<tr>
+  <td width="33%"><img src="doc/screenshots/07-lunar-eclipse.jpg" alt="The total lunar eclipse of 14 March 2025: the Moon in the Earth's umbra."><br><sub>The total lunar eclipse of 14 March 2025: the Moon in the Earth's umbra.</sub></td>
+  <td width="33%"><img src="doc/screenshots/08-mars-retrograde.jpg" alt="Mars's retrograde loop in 2027 from the Earth, the path of its past year, Jupiter's below."><br><sub>Mars's retrograde loop in 2027 from the Earth, the path of its past year, Jupiter's below.</sub></td>
+  <td width="33%"><img src="doc/screenshots/09-halley.jpg" alt="Halley's comet at its 1986 perihelion, among the inner planets."><br><sub>Halley's comet at its 1986 perihelion, among the inner planets.</sub></td>
+</tr>
+<tr>
+  <td width="33%"><img src="doc/screenshots/10-neowise.jpg" alt="Comet NEOWISE from the Earth in July 2020, its tail away from the Sun."><br><sub>Comet NEOWISE from the Earth in July 2020, its tail away from the Sun.</sub></td>
+  <td width="33%"><img src="doc/screenshots/11-true-distances.jpg" alt="The same solar system at true distances: the inner planets vanish into the Sun's glow."><br><sub>The same solar system at true distances: the inner planets vanish into the Sun's glow.</sub></td>
+  <td width="33%"><img src="doc/screenshots/12-pointing.jpg" alt="Pointing the phone from Greenwich: a horizon, the compass, and where Saturn is in the sky."><br><sub>Pointing the phone from Greenwich: a horizon, the compass, and where Saturn is in the sky.</sub></td>
+</tr>
+</table>
+
+These are simulator screenshots, staged from a REPL connected to the app
+(built with `SOLAR_REPL=1`).
 
 - **Positions** come from E. M. Standish's Keplerian elements (JPL): table 1
   inside 1800–2050 and tables 2a/2b outside it, with Kepler's equation solved

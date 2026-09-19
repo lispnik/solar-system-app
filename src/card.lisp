@@ -92,7 +92,8 @@ title, or for the Sun and the Moon, their eclipses."
       (when (and *sky-mode* (getf facts :phase))
         (line "lit" "~d% · ~d° from Sun" (round (* 100 (getf facts :phase)))
               (round (getf facts :elongation))))
-      (when (and *sky-mode* (getf facts :size))
+      ;; A comet's nucleus is a few km: no size worth giving.
+      (when (and *sky-mode* (getf facts :size) (not (body-comet body)))
         (line "looks" "~a across" (angular-size (getf facts :size))))
       (when (and *sky-mode* *observer*)
         (multiple-value-bind (x y z) (centre-of body tc)
