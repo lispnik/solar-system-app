@@ -50,6 +50,15 @@
 (defvar *panel* nil)
 (defvar *labels-button* nil)
 (defvar *scale-button* nil)
+(defvar *small-bodies-button* nil)
+
+(defun toggle-small-bodies ()
+  (setf *small-bodies-on* (not *small-bodies-on*))
+  (show-small-bodies-button))
+
+(defun show-small-bodies-button ()
+  (when *small-bodies-button*
+    (objc:invoke *small-bodies-button* "setAlpha:" (if *small-bodies-on* 1d0 0.4d0))))
 (defvar *clock-label* nil "The date and rate, top left.")
 
 (defun rate ()
@@ -199,7 +208,7 @@ move the labels."
     row))
 
 (defun toggle-buttons ()
-  (list *labels-button* *trails-button* *sky-button* *scale-button*))
+  (list *labels-button* *trails-button* *small-bodies-button* *sky-button* *scale-button*))
 
 (defun make-panel ()
   "The playback controls, on a dark blur."
@@ -247,6 +256,7 @@ move the labels."
       (setf *labels-button* (icon-button "tag.fill" #'toggle-labels)
             *trails-button* (icon-button "scribble.variable" #'toggle-trails)
             *sky-button* (icon-button "globe.americas" #'toggle-sky)
+            *small-bodies-button* (icon-button "sparkles" #'toggle-small-bodies)
             *scale-button* (icon-button "ruler" #'toggle-scale))
       (dolist (view (list (row *play-button* *slider* *span-button*)
                           dates

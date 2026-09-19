@@ -39,7 +39,10 @@
   :bundle-frameworks ("UIKit" "Foundation" "CoreGraphics" "QuartzCore" "Metal" "MetalKit")
   ;; Planet maps from Solar System Scope (solarsystemscope.com/textures),
   ;; CC BY 4.0, scaled to 1024 x 512.
-  :bundle-resources (("res/textures" . "textures"))
+  :bundle-resources (("res/textures" . "textures")
+                     ;; 8,826 asteroids brighter than H 13, from JPL's
+                     ;; Small-Body Database: eight float32s each.
+                     ("res/asteroids.bin" . "asteroids.bin"))
   :remote-repl #.(and (uiop:getenv "SOLAR_REPL") t)
 
   ;; A device build is made only when it can be signed; identity, team and

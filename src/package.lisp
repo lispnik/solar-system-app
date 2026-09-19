@@ -23,6 +23,7 @@
    ;; dwarf planets and moons
    #:*dwarfs* #:heliocentric-bodies #:find-body #:*moons* #:moons-of #:body-parent
    #:body-moon #:moon-offset #:moon-orbit-points #:lunar-position #:+km-per-au+
+   #:*comets* #:body-comet #:comet-orbit-points #:comet-tail
    ;; projection into the scene
    #:*radius-exponent* #:compression #:compress #:disc-radius
    #:moon-system-scales #:moon-display-offset

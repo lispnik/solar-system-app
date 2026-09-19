@@ -37,6 +37,8 @@
   ;; Moons: the body they go round, and how (satellites.lisp).
   (parent nil)
   (moon nil)
+  ;; Comets: their conic's elements (comets.lisp).
+  (comet nil)
   ;; Not the ephemeris: for drawing, and for the barycentre.
   (radius-km 0d0 :type double-float)
   (mass-ratio 0d0 :type double-float)     ; Sun's mass / the planet system's
@@ -180,6 +182,8 @@ node. Values x, y, z."
 centuries of TT from J2000."
   (when (body-samples body)
     (return-from heliocentric-position (sampled-position body tc)))
+  (when (body-comet body)
+    (return-from heliocentric-position (comet-position body tc)))
   (multiple-value-bind (a e incl argp node m) (elements body tc)
     (let ((ea (solve-kepler m e)))
       (to-ecliptic (* a (- (cos ea) e))

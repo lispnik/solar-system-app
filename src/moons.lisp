@@ -69,7 +69,7 @@ the fit's error (0 for none)."
   "The major moons, each with its parent.")
 
 (defun find-body (name)
-  (find name (append (list +sun+) (heliocentric-bodies) *moons*)
+  (find name (append (list +sun+) (heliocentric-bodies) *moons* (symbol-value '*comets*))
         :key #'body-name :test #'string-equal))
 
 (defun moons-of (body)

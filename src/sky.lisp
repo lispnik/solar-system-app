@@ -86,7 +86,10 @@ ringed planets as systems, and the Sun."
               (let ((ring (find (body-name body) +rings+ :key #'first :test #'string=)))
                 (when ring
                   (let ((outer (* per-unit (/ (fourth ring) +km-per-au+))))
-                    (push (list body x y z (smoothstep 2d0 8d0 outer) outer) systems)))))))))
+                    (push (list body x y z (smoothstep 2d0 8d0 outer) outer) systems))))))))
+      (when *small-bodies-on*
+        (dolist (comet *comets*)
+          (multiple-value-call #'place comet (geocentric comet tc)))))
     (values placed systems sun)))
 
 ;;; ------------------------------------------------------------------

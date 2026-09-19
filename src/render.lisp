@@ -326,6 +326,53 @@ vertex OrbitVarying orbit_vertex(uint vid [[vertex_id]], uint iid [[instance_id]
   return out;
 }
 
+// The asteroid belt: a point each, placed by the GPU from its elements --
+// a, e, i, node, argument of perihelion, mean anomaly at epoch, mean
+// motion (radians a day), epoch (days from J2000) -- by Kepler's equation,
+// then compressed like everything else, or seen from the Earth.
+struct Belt { float4 time; float4 sun; float4 earth; float4 colour; };
+// time: days from J2000, compression k, exponent, 1 from the Earth.
+// colour.a is scaled by earth.w, the point size is sun.w.
+
+struct BeltVarying { float4 position [[position]]; float size [[point_size]]; float4 colour; };
+
+vertex BeltVarying belt_vertex(uint vid [[vertex_id]],
+                               device const float *elements [[buffer(0)]],
+                               constant Uniforms &u [[buffer(1)]],
+                               constant Belt &b [[buffer(2)]])
+{
+  device const float *e = elements + vid * 8;
+  float a = e[0], ecc = e[1], inc = e[2], node = e[3], peri = e[4];
+  float m = e[5] + e[6] * (b.time.x - e[7]);
+  m -= 2.0 * M_PI_F * floor(m / (2.0 * M_PI_F));
+  float ea = m + ecc * sin(m);
+  for (int k = 0; k < 8; k++) ea -= (ea - ecc * sin(ea) - m) / (1.0 - ecc * cos(ea));
+  float xp = a * (cos(ea) - ecc), yp = a * sqrt(1.0 - ecc * ecc) * sin(ea);
+  float cw = cos(peri), sw = sin(peri), cn = cos(node), sn = sin(node), ci = cos(inc), si = sin(inc);
+  float3 p = float3((cw * cn - sw * sn * ci) * xp - (sw * cn + cw * sn * ci) * yp,
+                    (cw * sn + sw * cn * ci) * xp + (cw * cn * ci - sw * sn) * yp,
+                    sw * si * xp + cw * si * yp);
+  if (b.time.w > 0.5) {
+    p -= b.earth.xyz;
+  } else {
+    float r = length(p);
+    p = p * (b.time.y * pow(r, b.time.z) / r) + b.sun.xyz;
+  }
+  BeltVarying out;
+  out.position = u.proj * (u.view * float4(p, 1.0));
+  out.size = b.sun.w;
+  out.colour = b.colour;
+  return out;
+}
+
+fragment float4 belt_fragment(BeltVarying in [[stage_in]], float2 corner [[point_coord]])
+{
+  float d = 2.0 * length(corner - 0.5);
+  float a = in.colour.a * (1.0 - smoothstep(0.5, 1.0, d));
+  if (a <= 0.0) discard_fragment();
+  return float4(in.colour.rgb * a, a);
+}
+
 fragment float4 orbit_fragment(OrbitVarying in [[stage_in]])
 {
   float a = in.colour.a * (1.0 - smoothstep(in.half_width - 0.5, in.half_width + 0.5, abs(in.across)));
@@ -345,7 +392,7 @@ fragment float4 orbit_fragment(OrbitVarying in [[stage_in]])
 ;;; The lines drawn, each +SEGMENTS+ long, in slots of the one buffer: the
 ;;; Sun's family's orbits, the moons' (relative to their planets), a trail
 ;;; for each of the Sun's family, and spare slots for what comes after.
-(defparameter +spare-lines+ 16)
+(defparameter +spare-lines+ 24 "Two sky circles, and each comet's orbit and tail.")
 
 (defun orbiters () (append (heliocentric-bodies) *moons*))
 (defun line-count () (+ (length (orbiters)) (length (heliocentric-bodies)) +spare-lines+))
@@ -362,11 +409,23 @@ orbits in the scene, the moons' relative to their planets.")
 ;;; Small per-frame data goes through setVertexBytes: from these, allocated
 ;;; once. Metal copies them at encode time, so one block each is enough.
 (defvar *uniforms* nil)     ; 40 floats: view, projection, viewport w h, line width, pad, sun xyzw
-(defvar *discs* nil)        ; 12 floats a body: x y z radius, r g b a, glow 0 0 0
+(defvar *discs* nil)        ; 24 floats a body (struct Disc), this frame's buffer's contents
+(defvar *disc-buffers* nil "Three MTLBuffers of discs, a frame each in turn, so
+the CPU never writes one the GPU may still be reading.")
+(defvar *disc-buffer* nil "This frame's.")
+(defparameter +max-discs+ 64)
 (defvar *orbit-info* nil)   ; 12 floats a line: r g b a, centre x y z 0, style x y 0 0
 
 (defvar *camera* (make-camera))
 (defvar *sky-mode* nil "Seen from the Earth's centre (sky.lisp), or from outside.")
+(defvar *small-bodies-on* t "The comets and the asteroid belt.")
+(defvar *belt-pipeline* nil)
+(defvar *belt-buffer* nil "The asteroids' elements, eight floats each, from asteroids.bin.")
+(defvar *belt-count* 0)
+(defvar *belt-data* nil "16 floats: struct Belt.")
+
+(defun comet-orbit-slot (index) (spare-slot (+ 2 index)))
+(defun comet-tail-slot (index) (spare-slot (+ 2 (length *comets*) index)))
 (defvar *focus* nil "The body the camera follows, if any.")
 (defvar *last-placed* nil "PLACE-BODIES' answer for the last frame drawn.")
 (defvar *frame-count* 0)
@@ -456,6 +515,68 @@ are; NIL, and a word on the console, if it will not load."
         (unless (aref *maps* i) (setf (aref *maps* i) any))))
     (format t "~&SOLAR: ~d maps~@[ and the ring~]~%" (count-if-not #'null *maps*) *ring-map*)))
 
+(defun load-belt ()
+  "The asteroids' elements, straight from the bundle into a buffer."
+  (let ((url (objc:invoke (objc:invoke "NSBundle" "mainBundle")
+                          "URLForResource:withExtension:" "asteroids" "bin")))
+    (unless (nothing-p url)
+      (let* ((data (objc:invoke "NSData" "dataWithContentsOfURL:" url))
+             (length (objc:invoke data "length")))
+        (setf *belt-buffer* (objc:invoke *device* "newBufferWithBytes:length:options:"
+                                         (objc:invoke data "bytes") length 0)
+              *belt-count* (floor length 32)))))
+  (format t "~&SOLAR: ~d asteroids~%" *belt-count*))
+
+(defun draw-belt (encoder tc k sun)
+  "The asteroids, a point each, placed by the GPU."
+  (when (and *small-bodies-on* *belt-buffer* (plusp *belt-count*))
+    (destructuring-bind (sx sy sz) sun
+      (multiple-value-bind (ex ey ez) (if *sky-mode* (earth-position tc) (values 0d0 0d0 0d0))
+        (let ((scale (float (objc:invoke *view* "contentScaleFactor") 1d0)))
+          (store-floats *belt-data* 0
+                        (* tc 36525d0) k *radius-exponent* (if *sky-mode* 1 0)
+                        sx sy sz (* scale (if *sky-mode* 0.8d0 1.1d0))
+                        ex ey ez 1
+                        0.78 0.70 0.58 (if *sky-mode* 0.35 0.55)))))
+    (objc:invoke encoder "setDepthStencilState:" *depth-testing*)
+    (objc:invoke encoder "setRenderPipelineState:" *belt-pipeline*)
+    (objc:invoke encoder "setVertexBuffer:offset:atIndex:" *belt-buffer* 0 0)
+    (objc:invoke encoder "setVertexBytes:length:atIndex:" *uniforms* +uniform-bytes+ 1)
+    (objc:invoke encoder "setVertexBytes:length:atIndex:" *belt-data* 64 2)
+    (objc:invoke encoder "drawPrimitives:vertexStart:vertexCount:" 0 0 *belt-count*)))
+
+(defun update-comet-lines (tc k sun)
+  "Each comet's orbit, round the Sun, from outside; and its tail, away from
+the Sun, from anywhere -- a line from the tip, clear, to the head."
+  (let ((contents (objc:invoke *orbit-buffer* "contents")))
+    (loop for comet in *comets*
+          for index from 0
+          for orbit = (comet-orbit-slot index)
+          for tail = (comet-tail-slot index)
+          do (destructuring-bind (sx sy sz) sun
+               (if (and *small-bodies-on* (not *sky-mode*))
+                   (store-line orbit 0.55 0.75 0.90 0.14 sx sy sz)
+                   (store-line orbit 0 0 0 0 0 0 0))
+               (multiple-value-bind (length brightness) (comet-tail comet tc)
+                 (if (or (not *small-bodies-on*) (<= brightness 0.02d0))
+                     (store-line tail 0 0 0 0 0 0 0)
+                     (multiple-value-bind (x y z) (heliocentric-position comet tc)
+                       (multiple-value-bind (ex ey ez) (if *sky-mode* (earth-position tc) (values 0d0 0d0 0d0))
+                         (let* ((r (sqrt (+ (* x x) (* y y) (* z z))))
+                                (ux (/ x r)) (uy (/ y r)) (uz (/ z r))
+                                (base (* tail 4 (1+ +segments+))))
+                           (dotimes (i (1+ +segments+))
+                             (let* ((along (* length (- 1 (/ i +segments+))))
+                                    (px (+ x (* along ux))) (py (+ y (* along uy))) (pz (+ z (* along uz))))
+                               (multiple-value-bind (qx qy qz)
+                                   (if *sky-mode*
+                                       (values (- px ex) (- py ey) (- pz ez))
+                                       (compress px py pz k))
+                                 (store-floats contents (+ base (* 4 i)) qx qy qz 1))))
+                           (if *sky-mode*
+                               (store-line tail 0.78 0.90 1.0 (* 0.9d0 brightness) 0 0 0 1 2.5)
+                               (store-line tail 0.78 0.90 1.0 (* 0.9d0 brightness) sx sy sz 1 2.5)))))))))))
+
 (defun texture-index (body)
   (let ((index (position (body-name body) +maps+ :key #'car :test #'string=)))
     (if (and index (aref *maps* index)) index -1)))
@@ -491,6 +612,8 @@ alpha into PIXEL-FORMAT."
             *orbit-pipeline* (make-pipeline library "orbit_vertex" "orbit_fragment" pixel-format samples)
             *disc-pipeline* (make-pipeline library "disc_vertex" "disc_fragment" pixel-format samples)
             *ring-pipeline* (make-pipeline library "ring_vertex" "ring_fragment" pixel-format samples)
+            *belt-pipeline* (make-pipeline library "belt_vertex" "belt_fragment" pixel-format samples)
+            *belt-data* (cffi:foreign-alloc :float :count 16)
             *depth-writing* (depth-state 3 t)     ; less or equal
             *depth-testing* (depth-state 3 nil)
             *ring-data* (loop for (name) in +rings+
@@ -498,11 +621,15 @@ alpha into PIXEL-FORMAT."
             *orbit-buffer* (objc:invoke *device* "newBufferWithLength:options:"
                                         (* 16 orbits (1+ +segments+)) 0)
             *uniforms* (cffi:foreign-alloc :float :count (/ +uniform-bytes+ 4))
-            *discs* (cffi:foreign-alloc :float :count (* +disc-floats+ (1+ orbits)))
+            *disc-buffers* (coerce (loop repeat 3
+                                         collect (objc:invoke *device* "newBufferWithLength:options:"
+                                                              (* 4 +disc-floats+ +max-discs+) 0))
+                                   'simple-vector)
             *orbit-info* (cffi:foreign-alloc :float :count (* 12 orbits)))
       ;; Every line starts clear, so a slot nothing has filled draws nothing.
       (dotimes (i (* 12 orbits)) (setf (cffi:mem-aref *orbit-info* :float i) 0.0))
       (load-maps)
+      (load-belt)
       (when *sky-mode* (store-sky-circles))
       (format t "SOLAR: Metal ready on ~a, ~dx MSAA; ~d orbits~%"
               (objc:ns-string-to-string (objc:invoke *device* "name")) samples orbits)
@@ -536,6 +663,10 @@ into it."
         (loop for body in (heliocentric-bodies)
               for slot from 0
               do (store-orbit contents slot (orbit-points body tc +segments+) (x y z)
+                   (compress x y z k)))
+        (loop for comet in *comets*
+              for index from 0
+              do (store-orbit contents (comet-orbit-slot index) (comet-orbit-points comet +segments+) (x y z)
                    (compress x y z k))))
       (setf *orbit-key* (list *radius-exponent* tc)
             *scales* (moon-system-scales tc k)))))
@@ -623,7 +754,12 @@ outside it, and Saturn's rings inside Mimas."
                             (place moon (+ px dx) (+ py dy) (+ pz dz)
                                    (max (* 1.3d0 pixels-per-point)
                                         (blend (base moon) (to-scale (body-radius-km moon))))
-                                   alpha)))))))))))
+                                   alpha))))))))))
+        (when *small-bodies-on*
+          (dolist (comet *comets*)
+            (multiple-value-bind (x y z) (multiple-value-call #'compress
+                                           (heliocentric-position comet tc) k)
+              (place comet (+ x sx) (+ y sy) (+ z sz) (base comet))))))
       (values placed systems sun))))
 
 (defun view-axes (body tc)
@@ -638,10 +774,13 @@ outside it, and Saturn's rings inside Mimas."
           (multiple-value-call #'values (turn ax ay az) (turn bx by bz) (turn cx cy cz)))))))
 
 (defun fill-discs (placed tc ringed)
-  "The bodies into *DISCS*, farthest from the camera first, so that nearer
-ones blend over them at their edges. RINGED: the planets whose rings are
-drawn; Saturn's shadow it."
-  (loop for (nil body x y z radius alpha) in (sort (copy-list placed) #'< :key #'first)
+  "The bodies into this frame's disc buffer, farthest from the camera
+first, so that nearer ones blend over them at their edges. RINGED: the
+planets whose rings are drawn; Saturn's shadow it."
+  (setf *disc-buffer* (svref *disc-buffers* (mod *frame-count* 3))
+        *discs* (objc:invoke *disc-buffer* "contents"))
+  (loop for (nil body x y z radius alpha) in (subseq (sort (copy-list placed) #'< :key #'first)
+                                                     0 (min +max-discs+ (length placed)))
         for slot from 0
         for base = (* +disc-floats+ slot)
         for colour = (body-colour body)
@@ -655,7 +794,7 @@ drawn; Saturn's shadow it."
            (multiple-value-bind (ax ay az bx by bz cx cy cz)
                (if (>= index 0) (view-axes body tc) (values 1d0 0d0 0d0 0d0 1d0 0d0 0d0 0d0 1d0))
              (store-floats *discs* (+ base 12) ax ay az 0 bx by bz 0 cx cy cz 0)))
-  (length placed))
+  (min +max-discs+ (length placed)))
 
 (defun fill-rings (systems tc)
   "Each ringed planet's rings into its block of *RING-DATA*: at its moon
@@ -803,7 +942,8 @@ within REACH points of its disc, or NIL."
              (k (compression tc))
              (orbits (line-count))
              (discs 0)
-             (ringed '()))
+             (ringed '())
+             (sun-at nil))
         (unless *sky-mode*
           (ensure-orbits tc k)
           (ensure-moon-orbits tc))
@@ -811,12 +951,14 @@ within REACH points of its disc, or NIL."
             (if *sky-mode*
                 (place-bodies-from-earth tc aspect height pixels-per-point)
                 (place-bodies tc k aspect height pixels-per-point))
-          (setf *last-placed* placed)
+          (setf *last-placed* placed
+                sun-at sun)
           (follow-focus placed)
           (setf ringed (fill-rings systems tc)
                 discs (fill-discs placed tc ringed))
           (fill-orbit-info systems sun)
           (update-trails tc k sun)
+          (update-comet-lines tc k sun)
           (store-matrix *uniforms* 0 (view-matrix *camera* aspect))
           (store-matrix *uniforms* 16 (projection-matrix *camera* aspect))
           (destructuring-bind (sx sy sz) sun
@@ -824,14 +966,18 @@ within REACH points of its disc, or NIL."
         (let ((pass (objc:invoke view "currentRenderPassDescriptor")))
           (unless (nothing-p pass)
             (let* ((commands (objc:invoke *queue* "commandBuffer"))
-                   (encoder (objc:invoke commands "renderCommandEncoderWithDescriptor:" pass)))
+                   (encoder (objc:invoke commands "renderCommandEncoderWithDescriptor:" pass))
+                   (encoded nil))
+             ;; An encoder must be ended even if a Lisp error unwinds through
+             ;; here: Metal aborts the process if one is freed while open.
+             (unwind-protect
+              (progn
               ;; Bodies first, writing their spheres' depth; then the
               ;; rings, which Saturn hides half of; then the orbits, which
               ;; pass behind whatever is nearer.
               (objc:invoke encoder "setDepthStencilState:" *depth-writing*)
               (objc:invoke encoder "setRenderPipelineState:" *disc-pipeline*)
-              (objc:invoke encoder "setVertexBytes:length:atIndex:" *discs*
-                           (* 4 +disc-floats+ discs) 0)
+              (objc:invoke encoder "setVertexBuffer:offset:atIndex:" *disc-buffer* 0 0)
               (objc:invoke encoder "setVertexBytes:length:atIndex:" *uniforms* +uniform-bytes+ 1)
               (objc:invoke encoder "setFragmentBytes:length:atIndex:" *uniforms* +uniform-bytes+ 1)
               ;; Saturn's rings, for the shadow they cast on it.
@@ -850,6 +996,7 @@ within REACH points of its disc, or NIL."
                     (objc:invoke encoder "setVertexBytes:length:atIndex:" block 96 0)
                     (objc:invoke encoder "setFragmentBytes:length:atIndex:" block 96 0)
                     (objc:invoke encoder "drawPrimitives:vertexStart:vertexCount:" 4 0 4))))
+              (draw-belt encoder tc k sun-at)
               ;; Orbits: a quad (triangle strip of 4) per segment.
               (objc:invoke encoder "setDepthStencilState:" *depth-testing*)
               (objc:invoke encoder "setRenderPipelineState:" *orbit-pipeline*)
@@ -858,9 +1005,11 @@ within REACH points of its disc, or NIL."
               (objc:invoke encoder "setVertexBytes:length:atIndex:" *orbit-info* (* 48 orbits) 2)
               (objc:invoke encoder "drawPrimitives:vertexStart:vertexCount:instanceCount:"
                            4 0 4 (* orbits +segments+))
-              (objc:invoke encoder "endEncoding")
-              (objc:invoke commands "presentDrawable:" (objc:invoke view "currentDrawable"))
-              (objc:invoke commands "commit"))))
+              (setf encoded t))
+              (objc:invoke encoder "endEncoding"))
+              (when encoded
+                (objc:invoke commands "presentDrawable:" (objc:invoke view "currentDrawable"))
+                (objc:invoke commands "commit")))))
         (after-frame jd)))))
 
 ;;; ------------------------------------------------------------------

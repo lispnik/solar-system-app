@@ -476,3 +476,40 @@ kind, and nothing found that is not catalogued."
              (multiple-value-bind (lon lat) (eclipse-surface-point (event-jd event))
                (is (< (abs (- lat latitude)) 1d0) "~d: latitude ~,1f, not ~,1f" year lat latitude)
                (is (< (abs (- lon longitude)) 1d0) "~d: longitude ~,1f, not ~,1f" year lon longitude)))))
+
+;;; ------------------------------------------------------------------
+;;; comets
+
+(defparameter +horizons-comets+
+  ;; Heliocentric, ecliptic J2000, AU, near each one's perihelion.
+  '(("Halley" (2446300.5d0 7.754788183120523d-01 2.719796947719194d+00 -2.378788431222736d-01) (2446469.5d0 3.665237686187280d-01 -4.267316646283888d-01 1.711383752129464d-01))
+     ("Encke" (2460100.5d0 2.151111364067011d+00 4.887716566998965d-01 2.769880637623961d-01) (2460239.5d0 -3.143659328939181d-01 1.291795013224433d-01 -4.328866443742160d-03))
+     ("67P" (2457247.5d0 5.688456396173152d-01 1.104980896517090d+00 3.354636719399322d-02) (2457400.5d0 -1.918566754987374d+00 8.491334872504690d-01 2.490781604151298d-01))
+     ("Swift–Tuttle" (2448968.5d0 7.602054466552847d-01 -4.192125364513834d-01 4.056589025319861d-01) (2449100.5d0 -3.895654134449793d-02 -1.081935035474365d+00 -1.955652723429359d+00))
+     ("Tempel–Tuttle" (2450872.5d0 4.498573747379495d-01 8.659234857482696d-01 3.906814648320378d-02) (2451000.5d0 1.658118408065900d+00 -1.172990151449278d+00 -6.408833419285102d-01))
+     ("Pons–Brooks" (2460300.5d0 5.777340229771530d-01 -7.765692392114218d-02 2.045632046712177d+00) (2460421.5d0 1.144154433111886d-01 7.336811650653356d-01 -2.413643836276787d-01))
+     ("Hale–Bopp" (2450400.5d0 4.652527914267545d-01 -2.053779426112071d+00 1.083609448219202d+00) (2450537.5d0 -1.123546277470507d-01 5.416015486061260d-01 7.288453522443197d-01))
+     ("NEOWISE" (2459034.5d0 2.136805874356692d-01 1.395216830534798d-01 1.476384647229214d-01) (2459054.5d0 4.841331667714695d-02 -5.326700614112362d-01 3.719226690245201d-01))
+     ("Tsuchinshan–ATLAS" (2460581.5d0 1.504787571070616d-01 3.033702848984849d-01 -1.964302141643069d-01) (2460595.5d0 5.276697450516025d-01 1.117880443687671d-01 7.787450202108295d-02))))
+
+(test comets-match-horizons
+  ;; Two-body motion from JPL's osculating elements: close near the
+  ;; perihelion they describe, which is where comets matter.
+  (loop for (name . rows) in +horizons-comets+
+        do (loop for (jd hx hy hz) in rows
+                 do (multiple-value-bind (x y z)
+                        (heliocentric-position (find-body name) (centuries-since-j2000 jd))
+                      (let ((angle (angle-between x y z hx hy hz))
+                            (r (sqrt (+ (* x x) (* y y) (* z z))))
+                            (hr (sqrt (+ (* hx hx) (* hy hy) (* hz hz)))))
+                        (is (< angle 0.5d0) "~a at JD ~a: ~,3f degrees off" name jd angle)
+                        (is (< (abs (/ (- r hr) hr)) 0.01d0) "~a at JD ~a: r ~,4f, not ~,4f" name jd r hr))))))
+
+(test kepler-at-the-edge
+  (loop for e in '(0.9d0 0.99d0 0.999d0 0.9999d0)
+        do (loop for m from -3.1d0 to 3.1d0 by 0.05d0
+                 do (let ((ea (solar-system.core::solve-kepler-robust m e)))
+                      (is (< (abs (- ea (* e (sin ea)) m)) 1d-10) "e ~a M ~a" e m))))
+  (loop for m in '(-50d0 -1d0 -0.001d0 0d0 0.3d0 7d0 200d0)
+        do (let ((h (solar-system.core::solve-kepler-hyperbolic m 1.0001d0)))
+             (is (< (abs (- (* 1.0001d0 (sinh h)) h m)) (* 1d-10 (max 1 (abs m))))))))

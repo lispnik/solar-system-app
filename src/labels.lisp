@@ -28,7 +28,7 @@
     (objc:invoke root "addSubview:" container)
     (dolist (edge '("topAnchor" "bottomAnchor" "leadingAnchor" "trailingAnchor"))
       (ui:pin container edge root edge))
-    (dolist (body (append (list +sun+) (heliocentric-bodies) *moons*))
+    (dolist (body (append (list +sun+) (heliocentric-bodies) *moons* *comets*))
       (let ((label (objc:alloc-init-object "UILabel")))
         (objc:invoke label "setText:" (body-name body))
         (objc:invoke label "setFont:"
@@ -59,6 +59,12 @@ any that would overlap one already placed; hide the rest."
         (multiple-value-bind (width height scale aspect projection) (screen-metrics *view*)
           (let ((right (/ width scale)) (bottom (/ height scale))
                 (taken '()))
+            ;; Whatever was not placed this frame -- the Earth, seen from
+            ;; itself; the comets, switched off -- has no label either.
+            (maphash (lambda (body entry)
+                       (unless (find body *last-placed* :key #'second)
+                         (show-label entry nil)))
+                     *labels*)
             (dolist (placed (sort (copy-list *last-placed*) #'< :key (lambda (p) (label-rank (second p)))))
               (destructuring-bind (depth body x y z radius alpha) placed
                 (declare (ignore depth))

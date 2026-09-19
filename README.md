@@ -30,6 +30,14 @@ right now, in Common Lisp on iOS. It uses ECL through
   shadow falls on Saturn, with gaps like the Cassini Division letting light
   through. Uranus's ten main rings are drawn at their true radii from Voyager
   2, in the same plane as its moons' orbits.
+- **Comets and the asteroid belt**: nine comets, including Halley, Hale–Bopp,
+  NEOWISE and Tsuchinshan–ATLAS (on a hyperbola), use JPL Horizons' elements
+  for the perihelion each is known for. They match Horizons to within half a
+  degree around those dates. Tails point away from the Sun and grow as a
+  comet nears it. The belt is 8,825 asteroids brighter than magnitude 13 from
+  JPL's Small-Body Database, each placed by Kepler's equation on the GPU. The
+  Kirkwood gaps, where Jupiter has cleared the belt, show up without any
+  special code.
 - **Events**: solar and lunar eclipses, transits of Mercury and Venus,
   oppositions, and conjunctions closer than 0.5° are found in the same
   ephemeris by a background search. They're tested against NASA's eclipse canon
@@ -57,6 +65,31 @@ right now, in Common Lisp on iOS. It uses ECL through
 | tap a body | follow it; for a planet with moons, zoom in until its moons show |
 | double tap | back to the view from above the north pole, following nothing |
 | tap empty space | hide or show the controls |
+
+The bottom row of toggles:
+- **tag**: name labels.
+- **scribble**: trails. Each body gets a fading trail over the last eighth of
+  its orbit, or over the past year in the Earth view.
+- **sparkles**: comets and asteroids.
+- **globe**: the view from Earth. See below.
+- **ruler**: true distances.
+
+## The view from Earth
+
+The camera sits at Earth's centre, and everything is where it really is.
+Planets show their phases, and the Moon passes in front of the Sun. Pinch to
+narrow the view, from 120° down to 0.03°: Jupiter becomes a disc with its moons
+beside it. The ecliptic and the celestial equator run across the sky, and the
+trails trace each planet's path over the past year, including Mars's
+retrograde loops.
+
+Stepping to an eclipse in this view looks at it. A lunar eclipse shows the
+Moon turning red in Earth's shadow. A solar eclipse moves you to the point on
+Earth where it is greatest, matching NASA's published points to within a
+degree, and keeps you there as Earth turns.
+
+The app remembers where it was left: the date (or now, if it was left at real
+time), the speed, the toggles, the camera and what it was following.
 
 The panel at the bottom works like a video player:
 - ⏸/▶ plays and pauses.
