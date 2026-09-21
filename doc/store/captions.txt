@@ -1,0 +1,9 @@
+# The App Store screenshots: raw simulator shot | headline | subhead.
+01-overview | Every planet, where it really is | Now, and any date from 3000 BC to 3000 AD
+02-eclipse  | Stand under a total eclipse | 12 August 2026, from 65.2°N 25.1°W
+03-earth    | The Earth, lit where the Sun is | Turning once a sidereal day, the Moon beside it
+04-saturn   | Saturn's shadow on its rings | With Titan, Rhea, Dione, Tethys and Mimas
+05-jupiter  | Jupiter from the back garden | The four moons Galileo saw in 1610
+06-lunar    | The Moon in Earth's shadow | 14 March 2025, and every eclipse to 3000 AD
+07-uranus   | Uranus, rolling on its side | Its rings at the radii Voyager 2 measured
+08-comet    | Comets on the orbits they ride | NEOWISE at perihelion, 3 July 2020

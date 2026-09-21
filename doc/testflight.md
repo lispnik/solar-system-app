@@ -103,6 +103,23 @@ never ship.
 `CFBundleShortVersionString` stays `1.0` across builds; raise it in
 `solar-system.asd` when the app itself changes version.
 
+## Screenshots
+
+`doc/store/` holds the eight App Store screenshots, 1320 x 2868 -- the
+6.9-inch size App Store Connect asks for, and the only iPhone size it now
+requires. Upload them in order; the first three are what people see in
+search.
+
+They are made in two steps. `tools/store-scenes.lisp` stages each moment in
+a running app (built with `SOLAR_REPL=1`, on a 6.9-inch simulator) and
+`xcrun simctl io <device> screenshot` takes the picture; then
+
+```
+swift tools/make-store-shots.swift <raw-directory>
+```
+
+puts each one under its caption from `doc/store/captions.txt`.
+
 ## Then, in App Store Connect
 
 Processing takes a few minutes, after which the build appears under
