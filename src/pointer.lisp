@@ -84,9 +84,9 @@
 
 (defun screen-turn ()
   "Radians the interface is turned from portrait, by the window scene's
-orientation: portrait 1, upside down 2, landscape left 4, landscape right 3."
-  (case (objc:invoke (objc:invoke (ui:key-window) "windowScene") "interfaceOrientation")
-    (2 pi) (3 (/ pi 2)) (4 (- (/ pi 2))) (t 0d0)))
+orientation."
+  (interface-turn
+   (objc:invoke (objc:invoke (ui:key-window) "windowScene") "interfaceOrientation")))
 
 (defun point-camera (tc)
   "Turn the camera the way the phone faces, once a frame, if it can say."

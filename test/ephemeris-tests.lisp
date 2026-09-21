@@ -587,6 +587,40 @@ that the J2000 RA stands in for the RA of date."
                     (is (< (abs (/ (row 1) n)) 1d-9) "centred up and down, turned ~a" turn)
                     (is (< (/ (row 2) n) -0.999d0) "in front, turned ~a" turn)))))))))))
 
+(test the-sky-is-up-however-the-phone-is-held
+  ;; Facing south, the phone upright with its back to the horizon, in each
+  ;; of the four ways it can be held. The screen's right must be west, its
+  ;; up the sky, and the eye to the north -- which POINTING-THE-PHONE-AT-
+  ;; THE-SUN cannot tell, since a view turned upside down still has the Sun
+  ;; in the middle of it.
+  ;;
+  ;; The phone's own axes, north-west-up: z out of the glass, to the north,
+  ;; in every case; x and y as UIKit's orientations put them. Landscape
+  ;; right has the home button on the right, so the phone's top points left
+  ;; -- east, facing south -- and its x points up.
+  (let* ((lon -87.63d0) (lat 41.88d0)
+         (tc (centuries-since-j2000 (utc-to-tt (jd-from-calendar 2026 9 21 18)))))
+    (multiple-value-bind (nx ny nz wx wy wz ux uy uz) (horizon-axes lon lat tc)
+      (loop for (orientation name x y) in '((1 "portrait"         (0 1 0)  (0 0 1))
+                                            (2 "upside down"      (0 -1 0) (0 0 -1))
+                                            (3 "landscape right"  (0 0 1)  (0 -1 0))
+                                            (4 "landscape left"   (0 0 -1) (0 1 0)))
+            do (let* ((z '(1 0 0))
+                      (m (coerce (mapcar (lambda (v) (float v 1d0))
+                                         (list (first x) (first y) (first z)
+                                               (second x) (second y) (second z)
+                                               (third x) (third y) (third z)))
+                                 '(simple-array double-float (9)))))
+                 (multiple-value-bind (qx qy qz qw) (matrix-quaternion m)
+                   (let ((r (device-camera-rotation qx qy qz qw lon lat tc
+                                                    (interface-turn orientation))))
+                     (flet ((row-along (i ex ey ez)
+                              (+ (* (aref r (* 3 i)) ex) (* (aref r (+ 1 (* 3 i))) ey)
+                                 (* (aref r (+ 2 (* 3 i))) ez))))
+                       (is (> (row-along 0 wx wy wz) 0.999d0) "~a: the screen's right is not west" name)
+                       (is (> (row-along 1 ux uy uz) 0.999d0) "~a: the screen's up is not the sky" name)
+                       (is (> (row-along 2 nx ny nz) 0.999d0) "~a: the eye is not to the north" name)))))))))
+
 (test facts-about-bodies
   (let ((tc (centuries-since-j2000 (jd-from-calendar 2026 9 18))))
     (let ((earth (body-facts (find-planet "Earth") tc)))

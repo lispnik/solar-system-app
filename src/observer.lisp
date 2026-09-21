@@ -78,6 +78,17 @@ in north-west-up; those, in the ecliptic, are the view's axes."
                (vy (mapcar (lambda (a b) (- (* c b) (* s a))) dx dy)))
           (coerce (append vx vy dz) '(simple-array double-float (9))))))))
 
+;;; UIInterfaceOrientation, as the window scene reports it, and how far the
+;;; interface is turned from portrait. Landscape right (3) has the home
+;;; button on the right: the phone's top to the left, its x straight up.
+(defun interface-turn (orientation)
+  "Radians the interface is turned from portrait, for a UIInterfaceOrientation:
+portrait 1, upside down 2, landscape right 3, landscape left 4."
+  (case orientation
+    ;; Landscape right is the phone turned a quarter anticlockwise, so the
+    ;; interface is a quarter clockwise from the phone's own axes: minus.
+    (2 +pi+) (3 (- (/ +pi+ 2))) (4 (/ +pi+ 2)) (t 0d0)))
+
 (defun matrix-quaternion (m)
   "The unit quaternion of the rotation whose columns are M's -- M row-major
 nine -- values qx qy qz qw. For tests: the attitude a phone would report."

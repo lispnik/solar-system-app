@@ -25,7 +25,7 @@
    #:body-moon #:moon-offset #:moon-orbit-points #:lunar-position #:+km-per-au+
    #:*comets* #:body-comet #:comet-orbit-points #:comet-tail
    ;; standing on the Earth
-   #:observer-position #:horizon-axes #:altitude-azimuth #:device-camera-rotation
+   #:observer-position #:horizon-axes #:altitude-azimuth #:device-camera-rotation #:interface-turn
    #:matrix-quaternion #:body-facts #:centre-of
    ;; projection into the scene
    #:*radius-exponent* #:compression #:compress #:disc-radius
