@@ -7,3 +7,5 @@
 06-lunar    | The Moon in Earth's shadow | 14 March 2025, and every eclipse to 3000 AD
 07-uranus   | Uranus, rolling on its side | Its rings at the radii Voyager 2 measured
 08-comet    | Comets on the orbits they ride | NEOWISE at perihelion, 3 July 2020
+09-retrograde | Why Mars goes backwards | The loop it traced in the sky over the past year
+10-true | The whole thing, at true distances | Where the inner planets vanish into the Sun's glow
