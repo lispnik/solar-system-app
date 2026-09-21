@@ -54,11 +54,16 @@ account is a paid one.
 
 4. **Create the app in App Store Connect.**
    [appstoreconnect.apple.com › Apps](https://appstoreconnect.apple.com/apps)
-   › **+** › New App. iOS; name `Solar System` (it must be unique across the
-   whole store -- if it is taken, `Solar System Orrery` or the like; the name
-   on the phone comes from the bundle, not from this); primary language;
+   › **+** › New App. iOS; name **Where the Planets Are**; primary language;
    bundle ID `com.burnsidemk.solarsystem` from the list; SKU anything, say
    `solar-system`; Full Access.
+
+   The subtitle, **The real sky, any date**, is not in that dialogue -- set
+   it afterwards under App Information (30 characters, like the name).
+
+   The store name and the name under the icon are separate, and differ on
+   purpose: `CFBundleDisplayName` stays `Solar System`, because "Where the
+   Planets Are" truncates to "Where the Pl…" on a home screen.
 
 5. **Make an App Store Connect API key.** Users and Access › Integrations ›
    App Store Connect API › **+**. Name it `Upload`, access **App Manager**,
