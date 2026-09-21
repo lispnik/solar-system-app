@@ -1,4 +1,4 @@
-# Solar System
+# Where the Planets Are
 
 The Solar System in Common Lisp on iOS: the Sun, the planets, the dwarf
 planets, the major moons, comets and the asteroid belt. Everything is where it

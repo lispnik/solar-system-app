@@ -44,7 +44,9 @@
   :bundle-identifier "com.burnsidemk.solarsystem"
   :bundle-short-version "1.0"
   :bundle-name "Solar"
-  :bundle-display-name "Solar System"
+  ;; The name under the icon: the store name, though the home screen
+  ;; truncates it to "Where the Pl…".
+  :bundle-display-name "Where the Planets Are"
   :bundle-executable "solar"
   :bundle-device-family (:iphone)
   :bundle-orientations (:portrait :landscape-left :landscape-right)

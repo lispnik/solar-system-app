@@ -61,9 +61,8 @@ account is a paid one.
    The subtitle, **The real sky, any date**, is not in that dialogue -- set
    it afterwards under App Information (30 characters, like the name).
 
-   The store name and the name under the icon are separate, and differ on
-   purpose: `CFBundleDisplayName` stays `Solar System`, because "Where the
-   Planets Are" truncates to "Where the Pl…" on a home screen.
+   The name under the icon, `CFBundleDisplayName`, is the same, though a
+   home screen truncates it to "Where the Pl…".
 
 5. **Make an App Store Connect API key.** Users and Access › Integrations ›
    App Store Connect API › **+**. Name it `Upload`, access **App Manager**,

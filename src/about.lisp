@@ -10,7 +10,7 @@
 (defvar *about* nil)
 
 (defparameter +credits+
-  "Solar System 1.0
+  "Where the Planets Are 1.0
 
 Where the bodies are
   Planets: E. M. Standish's Keplerian elements (JPL).
