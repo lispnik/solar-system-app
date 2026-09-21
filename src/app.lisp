@@ -69,6 +69,7 @@ into its argument domain -- so a simulator launch can start the clock fast:
     (ui:pin *clock-label* "topAnchor" safe "topAnchor" 8)
     (ui:pin *clock-label* "leadingAnchor" safe "leadingAnchor" 16)
     (make-card root)
+    (make-about root)
     (update-clock)
     (sync-toggle-buttons)
     (let ((ticks 0))

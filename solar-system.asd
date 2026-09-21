@@ -12,7 +12,9 @@
   :build-operation "ios-app-op"
   :entry-point "solar-system:start"
   :description "The solar system from above, the planets where JPL's elements put them now, drawn in Metal."
-  :version "1.0.0"
+  ;; CFBundleVersion: the build number, which every upload must raise.
+  ;; SOLAR_BUILD=1.0.4 ecl ... for the next one.
+  :version #.(or (uiop:getenv "SOLAR_BUILD") "1.0.0")
   :serial t
   :depends-on #.(append '("solar-system-core" "objc/uikit" "cffi")
                         (when (uiop:getenv "SOLAR_REPL") '("slynk")))
@@ -35,19 +37,29 @@
                (:file "scale")
                (:file "timeline")
                (:file "card")
+               (:file "about")
                (:file "persist")
                (:file "app"))
 
-  :bundle-identifier "org.asdf-ios-app.solar-system"
+  :bundle-identifier "com.burnsidemk.solarsystem"
+  :bundle-short-version "1.0"
   :bundle-name "Solar"
   :bundle-display-name "Solar System"
   :bundle-executable "solar"
+  :bundle-device-family (:iphone)
   :bundle-orientations (:portrait :landscape-left :landscape-right)
   ;; Drawn by tools/make-icon.swift.
   :bundle-icon "res/Icon.xcassets"
   :bundle-status-bar-hidden t
-  ;; Without this the root view controller decides, and it shows the bar.
+  ;; A distribution build must not let a debugger attach.
+  :get-task-allow #.(not (uiop:getenv "SOLAR_DISTRIBUTION"))
+  ;; UIViewControllerBasedStatusBarAppearance: without it the root view
+  ;; controller decides, and it shows the bar.
   :bundle-info-plist (("UIViewControllerBasedStatusBarAppearance" . :false)
+                      ;; No encryption beyond what iOS itself provides, so
+                      ;; that no export-compliance question is asked on
+                      ;; every upload.
+                      ("ITSAppUsesNonExemptEncryption" . :false)
                       ("NSLocationWhenInUseUsageDescription"
                        . "To show the sky from where you are, when you hold the phone up to it."))
   :bundle-frameworks ("UIKit" "Foundation" "CoreGraphics" "QuartzCore" "Metal" "MetalKit"
@@ -57,7 +69,9 @@
   :bundle-resources (("res/textures" . "textures")
                      ;; 8,826 asteroids brighter than H 13, from JPL's
                      ;; Small-Body Database: eight float32s each.
-                     ("res/asteroids.bin" . "asteroids.bin"))
+                     ("res/asteroids.bin" . "asteroids.bin")
+                     ;; Required of every app: what it accesses and why.
+                     ("res/PrivacyInfo.xcprivacy" . "PrivacyInfo.xcprivacy"))
   :remote-repl #.(and (uiop:getenv "SOLAR_REPL") t)
 
   ;; A device build is made only when it can be signed; identity, team and
