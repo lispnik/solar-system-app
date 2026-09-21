@@ -15,6 +15,10 @@
 (defvar *location-manager* nil)
 (defvar *location-listener* nil)
 (defvar *motion-manager* nil)
+(defvar *fake-attitude* nil
+  "(qx qy qz qw), north-west-up, to use instead of Core Motion's attitude:
+for the simulator, which has no motion sensors. POSE-ATTITUDE makes one:
+  (setf *fake-attitude* (multiple-value-list (pose-attitude 180 50 3)))")
 (defvar *here* nil "(east-longitude . latitude), degrees, from Core Location.")
 (defvar *pointer-status* nil "A line for the clock while the phone is being asked.")
 (defvar *compass-labels* '() "(azimuth . label) along the horizon.")
@@ -63,8 +67,9 @@
         ;; magnetic north, a few degrees out, if not.
         (objc:invoke *motion-manager* "startDeviceMotionUpdatesUsingReferenceFrame:"
                      (if (logtest frames 8) 8 4)))
-      (setf *pointer-status* "no motion sensors here: drag to look"))
-  (when (and *here* (motion-available-p)) (setf *pointer-status* nil))
+      (unless *fake-attitude*
+        (setf *pointer-status* "no motion sensors here: drag to look")))
+  (when (and *here* (or *fake-attitude* (motion-available-p))) (setf *pointer-status* nil))
   (show-pointer-button))
 
 (defun stop-pointing ()
@@ -88,17 +93,25 @@ orientation."
   (interface-turn
    (objc:invoke (objc:invoke (ui:key-window) "windowScene") "interfaceOrientation")))
 
+(defun attitude ()
+  "The phone's attitude as a list (qx qy qz qw), or NIL if it cannot say:
+the fake one when there is one, else Core Motion's."
+  (cond (*fake-attitude*)
+        ((motion-available-p)
+         (let ((motion (objc:invoke *motion-manager* "deviceMotion")))
+           (unless (nothing-p motion)
+             (let ((q (objc:invoke (objc:invoke motion "attitude") "quaternion")))
+               (loop for i below 4 collect (float (aref q i) 1d0))))))))
+
 (defun point-camera (tc)
   "Turn the camera the way the phone faces, once a frame, if it can say."
-  (when (and *pointing* *observer* (motion-available-p))
-    (let ((motion (objc:invoke *motion-manager* "deviceMotion")))
-      (unless (nothing-p motion)
-        (let ((q (objc:invoke (objc:invoke motion "attitude") "quaternion")))
-          (replace (solar-system.core::camera-rotation *camera*)
-                   (device-camera-rotation (float (aref q 0) 1d0) (float (aref q 1) 1d0)
-                                           (float (aref q 2) 1d0) (float (aref q 3) 1d0)
-                                           (car *observer*) (cdr *observer*) tc
-                                           (screen-turn))))))))
+  (when (and *pointing* *observer*)
+    (let ((q (attitude)))
+      (when q
+        (replace (solar-system.core::camera-rotation *camera*)
+                 (device-camera-rotation (first q) (second q) (third q) (fourth q)
+                                         (car *observer*) (cdr *observer*) tc
+                                         (screen-turn)))))))
 
 (defun update-horizon (tc)
   "The horizon, a circle round the observer at the sky's distance, and the

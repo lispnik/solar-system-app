@@ -89,6 +89,39 @@ portrait 1, upside down 2, landscape right 3, landscape left 4."
     ;; interface is a quarter clockwise from the phone's own axes: minus.
     (2 +pi+) (3 (- (/ +pi+ 2))) (4 (/ +pi+ 2)) (t 0d0)))
 
+(defun pose-attitude (azimuth altitude &optional (orientation 1))
+  "Values qx qy qz qw: the attitude Core Motion would report, in its
+north-west-up frame, for a phone whose back looks towards AZIMUTH (from
+north through east) and ALTITUDE, degrees, held with its screen level in
+the UIInterfaceOrientation ORIENTATION. For the simulator, which has no
+motion sensors, and for tests."
+  (let* ((a (* altitude +degrees+)) (z (* azimuth +degrees+))
+         ;; The glass faces the eye: away from where the back looks.
+         (bz (list (- (* (cos a) (cos z))) (* (cos a) (sin z)) (- (sin a))))
+         ;; The screen's up: the sky's, less its part along the glass.
+         (along (third bz))
+         (up (let* ((v (list (- (* along (first bz))) (- (* along (second bz))) (- 1 (* along along))))
+                    (n (sqrt (reduce #'+ (mapcar #'* v v)))))
+               (mapcar (lambda (c) (/ c n)) v)))
+         ;; Its right: up cross the glass.
+         (right (list (- (* (second up) (third bz)) (* (third up) (second bz)))
+                      (- (* (third up) (first bz)) (* (first up) (third bz)))
+                      (- (* (first up) (second bz)) (* (second up) (first bz)))))
+         (minus (lambda (v) (mapcar #'- v))))
+    ;; The phone's own x and y, from the screen's, as each way of holding
+    ;; it turns them: landscape right has the phone's x up, its top left.
+    (multiple-value-bind (bx by)
+        (case orientation
+          (2 (values (funcall minus right) (funcall minus up)))
+          (3 (values up (funcall minus right)))
+          (4 (values (funcall minus up) right))
+          (t (values right up)))
+      (matrix-quaternion
+       (coerce (list (first bx) (first by) (first bz)
+                     (second bx) (second by) (second bz)
+                     (third bx) (third by) (third bz))
+               '(simple-array double-float (9)))))))
+
 (defun matrix-quaternion (m)
   "The unit quaternion of the rotation whose columns are M's -- M row-major
 nine -- values qx qy qz qw. For tests: the attitude a phone would report."

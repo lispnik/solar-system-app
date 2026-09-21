@@ -621,6 +621,29 @@ that the J2000 RA stands in for the RA of date."
                        (is (> (row-along 1 ux uy uz) 0.999d0) "~a: the screen's up is not the sky" name)
                        (is (> (row-along 2 nx ny nz) 0.999d0) "~a: the eye is not to the north" name)))))))))
 
+(test a-pose-looks-where-it-points
+  ;; POSE-ATTITUDE, fed to the camera with the matching interface turn, puts
+  ;; the direction it points at in the middle of the screen with the sky up,
+  ;; in every orientation -- what the simulator's fake attitude relies on.
+  (let* ((lon -87.63d0) (lat 41.88d0)
+         (tc (centuries-since-j2000 (utc-to-tt (jd-from-calendar 2026 9 21 18)))))
+    (multiple-value-bind (nx ny nz wx wy wz ux uy uz) (horizon-axes lon lat tc)
+      (loop for (az alt) in '((180 50) (90 10) (315 70) (0 -20))
+            do (let* ((a (* alt (/ pi 180))) (z (* az (/ pi 180)))
+                      (n (* (cos a) (cos z))) (w (- (* (cos a) (sin z)))) (u (sin a))
+                      (dx (+ (* n nx) (* w wx) (* u ux)))
+                      (dy (+ (* n ny) (* w wy) (* u uy)))
+                      (dz (+ (* n nz) (* w wz) (* u uz))))
+                 (dolist (orientation '(1 2 3 4))
+                   (multiple-value-bind (qx qy qz qw) (pose-attitude az alt orientation)
+                     (let ((r (device-camera-rotation qx qy qz qw lon lat tc
+                                                      (interface-turn orientation))))
+                       (flet ((row (i x y z) (+ (* (aref r (* 3 i)) x) (* (aref r (+ 1 (* 3 i))) y)
+                                                (* (aref r (+ 2 (* 3 i))) z))))
+                         (is (< (row 2 dx dy dz) -0.999d0) "~a/~a held ~a: not in front" az alt orientation)
+                         (is (> (row 1 ux uy uz) 0d0) "~a/~a held ~a: the sky is down" az alt orientation)
+                         (is (< (abs (row 0 ux uy uz)) 1d-9) "~a/~a held ~a: tilted" az alt orientation))))))))))
+
 (test facts-about-bodies
   (let ((tc (centuries-since-j2000 (jd-from-calendar 2026 9 18))))
     (let ((earth (body-facts (find-planet "Earth") tc)))
