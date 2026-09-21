@@ -93,6 +93,7 @@ These are simulator screenshots, staged from a REPL connected to the app
 | tap a body | follow it; for a planet with moons, zoom in until its moons show |
 | double tap | back to the view from above the north pole, following nothing |
 | tap empty space | hide or show the controls |
+| tap the clock | the credits: whose numbers and whose pictures these are |
 
 The bottom row of toggles:
 - **tag**: name labels.
@@ -203,3 +204,13 @@ source registry. Then, from SLY:
 
 If drawing ever signals an error, the view pauses and the clock label shows
 the error. Fix it over the REPL, then call `(solar-system:resume)`.
+
+## TestFlight
+
+```
+tools/testflight.sh                 # build, validate, upload
+```
+
+with a distribution identity, an App Store profile and an App Store Connect
+API key in the environment. [doc/testflight.md](doc/testflight.md) says where
+those come from and what App Store Connect wants once the build is up.

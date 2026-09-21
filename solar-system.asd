@@ -77,9 +77,9 @@
   ;; A device build is made only when it can be signed; identity, team and
   ;; profile come from the environment when this file is read, as in the
   ;; asdf-ios-app examples, so nobody's identity is committed here.
-  :bundle-platforms #.(if (uiop:getenv "IOS_SIGNING_IDENTITY")
-                          '(:simulator :device)
-                          '(:simulator))
+  :bundle-platforms #.(cond ((uiop:getenv "SOLAR_DISTRIBUTION") '(:device))
+                            ((uiop:getenv "IOS_SIGNING_IDENTITY") '(:simulator :device))
+                            (t '(:simulator)))
   :code-signing-identity #.(or (uiop:getenv "IOS_SIGNING_IDENTITY") :automatic)
   :development-team #.(uiop:getenv "IOS_DEVELOPMENT_TEAM")
   :provisioning-profile #.(uiop:getenv "IOS_PROVISIONING_PROFILE"))
