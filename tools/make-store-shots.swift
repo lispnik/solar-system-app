@@ -2,10 +2,12 @@
 //
 //     swift tools/make-store-shots.swift <raw-directory> [out-directory]
 //
-// Takes the simulator screenshots named in doc/store/captions.txt -- 1320 x
-// 2868, which is the 6.9-inch size App Store Connect asks for -- and puts
-// each one under its caption on a dark ground, at the same size, ready to
-// upload.
+// Takes the simulator screenshots named in doc/store/captions.txt and puts
+// each one under its caption on a dark ground, at its own size, ready to
+// upload. Whatever the screenshots are -- 1320 x 2868 from a 6.9-inch
+// simulator, 1284 x 2778 from a 6.5-inch one -- the layout scales with
+// them, so App Store Connect gets each size it asks for from the same
+// captions.
 
 import AppKit
 import CoreGraphics
@@ -13,7 +15,6 @@ import Foundation
 import ImageIO
 import UniformTypeIdentifiers
 
-let width = 1320, height = 2868
 let arguments = CommandLine.arguments
 guard arguments.count >= 2 else {
     FileHandle.standardError.write("usage: make-store-shots.swift <raw-directory> [out]\n".data(using: .utf8)!)
@@ -38,7 +39,8 @@ let shots = manifest.split(separator: "\n").compactMap { line -> (String, String
 }
 
 func draw(_ text: String, font: NSFont, colour: NSColor, in context: CGContext,
-          x: CGFloat, top: CGFloat, width: CGFloat, leading: CGFloat) -> CGFloat {
+          x: CGFloat, top: CGFloat, width: CGFloat, leading: CGFloat,
+          canvasHeight: CGFloat) -> CGFloat {
     // Returns the y the next block starts at, counting down from the top.
     let paragraph = NSMutableParagraphStyle()
     paragraph.alignment = .left
@@ -50,7 +52,7 @@ func draw(_ text: String, font: NSFont, colour: NSColor, in context: CGContext,
     let bounds = CTFramesetterSuggestFrameSizeWithConstraints(
         framesetter, CFRange(location: 0, length: 0), nil,
         CGSize(width: width, height: .greatestFiniteMagnitude), nil)
-    let box = CGRect(x: x, y: CGFloat(height) - top - bounds.height, width: width, height: bounds.height)
+    let box = CGRect(x: x, y: canvasHeight - top - bounds.height, width: width, height: bounds.height)
     let frame = CTFramesetterCreateFrame(framesetter, CFRange(location: 0, length: 0),
                                          CGPath(rect: box, transform: nil), nil)
     CTFrameDraw(frame, context)
@@ -70,6 +72,10 @@ for (name, headline, subhead) in shots {
         exit(1)
     }
 
+    // The frame is the screenshot's own size, and the layout scales with it.
+    let width = shot.width, height = shot.height
+    let k = CGFloat(width) / 1320
+
     let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8,
                             bytesPerRow: 0, space: space,
                             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
@@ -85,49 +91,53 @@ for (name, headline, subhead) in shots {
     let glow = CGGradient(colorsSpace: space,
                           colors: [colour(1.0, 0.62, 0.20, 0.22), colour(1.0, 0.45, 0.10, 0)] as CFArray,
                           locations: [0, 1])!
-    context.drawRadialGradient(glow, startCenter: CGPoint(x: 660, y: 2560), startRadius: 0,
-                               endCenter: CGPoint(x: 660, y: 2560), endRadius: 900, options: [])
+    let glowAt = CGPoint(x: 660 * k, y: CGFloat(height) - 308 * k)
+    context.drawRadialGradient(glow, startCenter: glowAt, startRadius: 0,
+                               endCenter: glowAt, endRadius: 900 * k, options: [])
 
     // The caption. The headline takes the largest size that keeps it to two
     // lines, so a long one shrinks rather than running to three.
-    var headlineSize: CGFloat = 84
-    for size in [CGFloat(84), 78, 72, 66, 60] {
+    let textWidth = 1144 * k
+    var headlineSize: CGFloat = 84 * k
+    for size in [CGFloat(84) * k, 78 * k, 72 * k, 66 * k, 60 * k] {
         let font = NSFont.systemFont(ofSize: size, weight: .bold)
         let attributed = NSAttributedString(string: headline, attributes: [.font: font])
         let setter = CTFramesetterCreateWithAttributedString(attributed)
         let bounds = CTFramesetterSuggestFrameSizeWithConstraints(
             setter, CFRange(location: 0, length: 0), nil,
-            CGSize(width: CGFloat(1144), height: CGFloat.greatestFiniteMagnitude), nil)
+            CGSize(width: textWidth, height: CGFloat.greatestFiniteMagnitude), nil)
         headlineSize = size
         if bounds.height < size * 2.5 { break }
     }
     let after = draw(headline, font: NSFont.systemFont(ofSize: headlineSize, weight: .bold),
                      colour: NSColor(srgbRed: 1, green: 1, blue: 1, alpha: 1),
-                     in: context, x: 88, top: 168, width: 1144, leading: 14)
-    _ = draw(subhead, font: NSFont.systemFont(ofSize: 44, weight: .regular),
+                     in: context, x: 88 * k, top: 168 * k, width: textWidth, leading: 14 * k,
+                     canvasHeight: CGFloat(height))
+    _ = draw(subhead, font: NSFont.systemFont(ofSize: 44 * k, weight: .regular),
              colour: NSColor(srgbRed: 0.64, green: 0.70, blue: 0.85, alpha: 1),
-             in: context, x: 88, top: after + 34, width: 1144, leading: 10)
+             in: context, x: 88 * k, top: after + 34 * k, width: textWidth, leading: 10 * k,
+             canvasHeight: CGFloat(height))
 
     // The screenshot itself, at its own shape, bleeding off the bottom.
-    let shotWidth: CGFloat = 1128
+    let shotWidth = 1128 * k
     let shotHeight = shotWidth * CGFloat(shot.height) / CGFloat(shot.width)
     let frame = CGRect(x: (CGFloat(width) - shotWidth) / 2,
-                       y: CGFloat(height) - 600 - shotHeight, width: shotWidth, height: shotHeight)
+                       y: CGFloat(height) - 600 * k - shotHeight, width: shotWidth, height: shotHeight)
     context.saveGState()
-    context.setShadow(offset: CGSize(width: 0, height: -12), blur: 40,
+    context.setShadow(offset: CGSize(width: 0, height: -12 * k), blur: 40 * k,
                       color: colour(0, 0, 0, 0.55))
-    context.addPath(rounded(frame, radius: 58))
+    context.addPath(rounded(frame, radius: 58 * k))
     context.setFillColor(colour(0, 0, 0))
     context.fillPath()
     context.restoreGState()
     context.saveGState()
-    context.addPath(rounded(frame, radius: 58))
+    context.addPath(rounded(frame, radius: 58 * k))
     context.clip()
     context.draw(shot, in: frame)
     context.restoreGState()
-    context.addPath(rounded(frame, radius: 58))
+    context.addPath(rounded(frame, radius: 58 * k))
     context.setStrokeColor(colour(1, 1, 1, 0.14))
-    context.setLineWidth(3)
+    context.setLineWidth(3 * k)
     context.strokePath()
 
     NSGraphicsContext.current = previous

@@ -2,9 +2,9 @@
 ;;;;
 ;;;; The pictures are staged from a REPL in a running app, since every one
 ;;;; of them is a moment in time: build with SOLAR_REPL=1, install on a
-;;;; 6.9-inch simulator (iPhone 17 Pro Max -- 1320 x 2868, the size App
-;;;; Store Connect asks for), and send this file, then each scene, over
-;;;; slynk. Screenshot with
+;;;; simulator of the size App Store Connect asks for (iPhone 17 Pro Max
+;;;; for 6.9 inches, 1320 x 2868; iPhone 14 Plus for 6.5, 1284 x 2778),
+;;;; and send this file, then each scene, over slynk. Screenshot with
 ;;;;
 ;;;;     xcrun simctl io <device> screenshot NN-name.png
 ;;;;

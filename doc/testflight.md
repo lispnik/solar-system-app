@@ -105,20 +105,32 @@ never ship.
 
 ## Screenshots
 
-`doc/store/` holds the eight App Store screenshots, 1320 x 2868 -- the
-6.9-inch size App Store Connect asks for, and the only iPhone size it now
-requires. Upload them in order; the first three are what people see in
-search.
+`doc/store/` holds the eight App Store screenshots in both sizes App Store
+Connect takes:
+
+- `6.9-inch/` -- 1320 x 2868, from an iPhone 17 Pro Max simulator.
+- `6.5-inch/` -- 1284 x 2778, from an iPhone 14 Plus simulator.
+
+Upload them in order; the first three are what people see in search.
 
 They are made in two steps. `tools/store-scenes.lisp` stages each moment in
-a running app (built with `SOLAR_REPL=1`, on a 6.9-inch simulator) and
-`xcrun simctl io <device> screenshot` takes the picture; then
+a running app (built with `SOLAR_REPL=1`) and `xcrun simctl io <device>
+screenshot` takes the picture; then
 
 ```
-swift tools/make-store-shots.swift <raw-directory>
+swift tools/make-store-shots.swift <raw-directory> doc/store/6.5-inch
 ```
 
-puts each one under its caption from `doc/store/captions.txt`.
+puts each one under its caption from `doc/store/captions.txt`, at whatever
+size the screenshots are -- the layout scales with them.
+
+A simulator of a given size, if there is none:
+
+```
+xcrun simctl create "Solar 6.5" \
+  com.apple.CoreSimulator.SimDeviceType.iPhone-14-Plus \
+  com.apple.CoreSimulator.SimRuntime.iOS-26-5
+```
 
 ## Then, in App Store Connect
 
