@@ -21,6 +21,23 @@ for the simulator, which has no motion sensors. POSE-ATTITUDE makes one:
   (setf *fake-attitude* (multiple-value-list (pose-attitude 180 50 3)))")
 (defvar *here* nil "(east-longitude . latitude), degrees, from Core Location.")
 (defvar *pointer-status* nil "A line for the clock while the phone is being asked.")
+(defvar *location-refused* nil
+  "Whether the app may not have the phone's location: refused for this app,
+turned off for the whole phone, or not allowed by Screen Time or a profile.")
+
+;;; What the clock says when there is no location to be had. Short lines:
+;;; the clock is narrow, and in a monospaced face.
+(defparameter +location-off+
+  (format nil "To match the sky, the app needs to know~%~
+               where you are, and location is off for it.~%~
+               Tap here to turn it on in Settings."))
+(defparameter +location-not-allowed+
+  (format nil "Location isn't allowed on this phone~%~
+               (Screen Time or a profile), so the sky~%~
+               can't be matched to where you are."))
+(defparameter +location-finding+ "finding where you are…")
+(defparameter +location-trouble+
+  (format nil "Can't find where you are just now;~%still trying."))
 (defvar *compass-labels* '() "(azimuth . label) along the horizon.")
 (defparameter +horizon-slot+ 20 "The spare line the horizon is drawn in.")
 
@@ -36,13 +53,56 @@ for the simulator, which has no motion sensors. POSE-ATTITUDE makes one:
     (setf *here* (cons (float (aref coordinate 1) 1d0) (float (aref coordinate 0) 1d0)))
     (when *pointing*
       (setf *observer* *here*)
-      (when (motion-available-p) (setf *pointer-status* nil)))))
+      (unless *location-refused* (setf *pointer-status* (status-once-found))))))
+
+(defun status-once-found ()
+  "What the clock says once the phone knows where it is: nothing, unless
+there is nothing to turn the view with."
+  (unless (or *fake-attitude* (motion-available-p))
+    "no motion sensors here: drag to look"))
 
 (objc:define-objc-method ("locationManager:didFailWithError:" :void)
     ((self location-listener) (manager objc:objc-object-pointer) (error objc:objc-object-pointer))
   (declare (ignore manager))
-  (setf *pointer-status*
-        (format nil "no location: ~a" (objc:ns-string-to-string (objc:invoke error "localizedDescription")))))
+  (when *pointing*
+    ;; CLError: 0, location unknown, is passing -- Core Location keeps
+    ;; trying; 1 is a refusal; the rest are trouble it may get past.
+    (case (objc:invoke error "code")
+      (0 (unless *here* (setf *pointer-status* +location-finding+)))
+      (1 (location-authorization-changed 2))
+      (t (setf *pointer-status* +location-trouble+)))))
+
+(objc:define-objc-method ("locationManagerDidChangeAuthorization:" :void)
+    ((self location-listener) (manager objc:objc-object-pointer))
+  (location-authorization-changed (objc:invoke manager "authorizationStatus")))
+
+(defun location-authorization-changed (status)
+  "Say so on the clock when the app may not have the phone's location, and
+look again when it may: CLAuthorizationStatus 1 restricted, 2 denied --
+for this app, or with Location Services off for the whole phone -- 3 and 4
+allowed, 0 not asked yet."
+  (case status
+    ((1 2)
+     (setf *location-refused* t)
+     (when *pointing*
+       (setf *pointer-status* (if (= status 1) +location-not-allowed+ +location-off+))))
+    ((3 4)
+     (let ((was-refused *location-refused*))
+       (setf *location-refused* nil)
+       (when (and *pointing* was-refused)
+         (setf *pointer-status* (if *here* (status-once-found) +location-finding+))
+         (objc:invoke *location-manager* "startUpdatingLocation"))))))
+
+(defun open-settings ()
+  "This app's page in Settings, where its location can be turned on: the
+URL in UIApplicationOpenSettingsURLString, read rather than copied."
+  (let ((url (objc:ns-string-to-string
+              (cffi:mem-ref (cffi:foreign-symbol-pointer "UIApplicationOpenSettingsURLString")
+                            :pointer))))
+    (objc:invoke (objc:invoke "UIApplication" "sharedApplication")
+                 "openURL:options:completionHandler:"
+                 (objc:invoke "NSURL" "URLWithString:" url)
+                 (objc:invoke "NSDictionary" "dictionary") nil)))
 
 (defun motion-available-p ()
   (and *motion-manager* (objc:invoke-bool *motion-manager* "isDeviceMotionAvailable")))
@@ -70,6 +130,8 @@ for the simulator, which has no motion sensors. POSE-ATTITUDE makes one:
       (unless *fake-attitude*
         (setf *pointer-status* "no motion sensors here: drag to look")))
   (when (and *here* (or *fake-attitude* (motion-available-p))) (setf *pointer-status* nil))
+  ;; Refused before, and so not asked again: say so now, over the rest.
+  (location-authorization-changed (objc:invoke *location-manager* "authorizationStatus"))
   (show-pointer-button))
 
 (defun stop-pointing ()

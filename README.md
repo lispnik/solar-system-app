@@ -127,7 +127,9 @@ the view as you hold the phone up to the sky, using Core Location and Core
 Motion's true-north attitude. A horizon line and compass points are drawn, and
 the card gives the followed body's altitude and azimuth. Held sideways, the
 panel would cover what the phone points at, so it hides itself; a tap brings
-it back. In the simulator,
+it back. If the app is refused the phone's location -- for itself, or with
+Location Services off altogether -- the clock says so in plain words, and a
+tap on it opens the app's page in Settings. In the simulator,
 which has no motion sensors, the location is still used and you drag to look
 around.
 

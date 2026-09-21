@@ -52,11 +52,16 @@ Tap to close.")
     (ui:pin panel "centerXAnchor" root "centerXAnchor")
     (ui:pin panel "centerYAnchor" root "centerYAnchor")
     (setf *about* panel)
-    ;; The clock opens it; a tap on it closes it.
+    ;; A tap on the clock opens it -- or Settings, while the clock is saying
+    ;; that the location is off -- and a tap on the panel closes it.
     (objc:invoke *clock-label* "setUserInteractionEnabled:" t)
     (objc:invoke *clock-label* "addGestureRecognizer:"
                  (objc:invoke (objc:invoke "UITapGestureRecognizer" "alloc") "initWithTarget:action:"
-                              (ui:action-target (lambda (sender) (declare (ignore sender)) (show-about t)))
+                              (ui:action-target (lambda (sender)
+                                                  (declare (ignore sender))
+                                                  (if (and *pointing* *location-refused*)
+                                                      (open-settings)
+                                                      (show-about t))))
                               "fire:"))
     (objc:invoke panel "addGestureRecognizer:"
                  (objc:invoke (objc:invoke "UITapGestureRecognizer" "alloc") "initWithTarget:action:"
