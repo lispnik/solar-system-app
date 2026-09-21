@@ -23,7 +23,17 @@ Changeable any time, without a new build — good for the next eclipse.
 
 ## Keywords (100)
 
-    orrery,planets,astronomy,eclipse,solar system,ephemeris,stargazing,moon,comet,saturn,jupiter,sky
+Comma separated, no spaces -- a space costs a character and buys nothing.
+Apple indexes the name and subtitle already, so nothing here repeats *where*,
+*planets*, *real*, *sky* or *date*, and it builds phrases by combining terms,
+so "solar" and "system" cover "solar system" without spending the space.
+
+    orrery,solar,system,astronomy,planetarium,ephemeris,eclipse,stargazing,moon,comet,orbit,space
+
+93 of the 100. The four left out on purpose: *stars*, because there is no star
+field and someone searching for one would be disappointed; *telescope*,
+because this is not one; *horoscope* and *astrology*, because they are the
+highest-volume terms near this app and the wrong audience for it.
 
 ## Description (4,000)
 
