@@ -87,11 +87,27 @@ for the simulator, which has no motion sensors. POSE-ATTITUDE makes one:
     (set-button-image *pointer-button*
                       (if *pointing* "location.north.circle.fill" "location.north.circle"))))
 
+(defun interface-orientation ()
+  "The window scene's UIInterfaceOrientation: 1 portrait, 2 upside down,
+3 landscape right, 4 landscape left."
+  (objc:invoke (objc:invoke (ui:key-window) "windowScene") "interfaceOrientation"))
+
 (defun screen-turn ()
-  "Radians the interface is turned from portrait, by the window scene's
-orientation."
-  (interface-turn
-   (objc:invoke (objc:invoke (ui:key-window) "windowScene") "interfaceOrientation")))
+  "Radians the interface is turned from portrait."
+  (interface-turn (interface-orientation)))
+
+(defvar *pointing-sideways* nil
+  "Whether the phone was last seen held sideways, pointed at the sky.")
+
+(defun update-panel-for-pointing ()
+  "Held sideways, the panel covers the middle of the screen -- where what
+the phone is pointed at is drawn. Hide it on the way into pointing
+sideways and show it on the way out; in between, a tap still shows it."
+  (let ((sideways (and *pointing* (member (interface-orientation) '(3 4)) t)))
+    (unless (eq sideways *pointing-sideways*)
+      (setf *pointing-sideways* sideways)
+      (objc:invoke *panel* "setHidden:" sideways)
+      (objc:invoke *clock-label* "setHidden:" nil))))
 
 (defun attitude ()
   "The phone's attitude as a list (qx qy qz qw), or NIL if it cannot say:

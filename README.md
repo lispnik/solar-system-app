@@ -125,7 +125,9 @@ shows how much of it is lit, its angle from the Sun and its apparent size.
 The location button (in the Earth view) puts you where the phone is and turns
 the view as you hold the phone up to the sky, using Core Location and Core
 Motion's true-north attitude. A horizon line and compass points are drawn, and
-the card gives the followed body's altitude and azimuth. In the simulator,
+the card gives the followed body's altitude and azimuth. Held sideways, the
+panel would cover what the phone points at, so it hides itself; a tap brings
+it back. In the simulator,
 which has no motion sensors, the location is still used and you drag to look
 around.
 

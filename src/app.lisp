@@ -77,6 +77,7 @@ into its argument domain -- so a simulator launch can start the clock fast:
                                (update-clock)
                                (update-card)
                                (update-timeline)
+                               (update-panel-for-pointing)
                                (when (zerop (mod (incf ticks) 8))
                                  (save-state)))))
     (start-searcher)
