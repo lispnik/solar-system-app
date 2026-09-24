@@ -85,30 +85,48 @@ https://github.com/lispnik/solar-system-app
 
 ## The screen recording
 
-Record on the phone, portrait unless noted, one take, about 90 seconds.
-Either iOS Screen Recording (Settings > Control Centre > Screen Recording)
-or QuickTime on the Mac (File > New Movie Recording, then choose the iPhone
-as the camera) -- QuickTime also catches the phone being tilted.
+About a minute and three-quarters, one take, on the phone. The reviewer
+wants to see the app launched and used; they do not need narration, and a
+silent recording is fine. Captions can be added afterwards if you like --
+the line to show is given for each beat.
 
-1. Start on the Home Screen. Tap the app's icon, so the recording begins
-   with the launch.
-2. The solar system appears at today's date, running in real time. Drag to
-   tilt it; pinch to zoom.
-3. Tap Saturn. It is followed, its moons come into view, and the card under
-   the clock fills with its distances, speed, size and next event.
-4. Tap the speed control: 1mo, so a month passes each second and the planets
-   visibly move. Then 1x again.
-5. Tap the right-hand arrow at the bottom two or three times to step through
-   events, stopping on an eclipse.
-6. Tap the globe button for the view from the Earth. Pinch in on Jupiter
-   until its four moons show beside it.
-7. Tap the location button. Allow the permission when iOS asks. The horizon
-   and compass points appear.
-8. Hold the phone up and turn slowly left and right, so the view turns with
-   it. Turn the phone sideways too, to show it working in landscape.
-9. Tap the ruler button to ease out to true distances, then again to come
-   back.
-10. Tap the clock at the top to show the credits, then tap to close.
+### Before pressing record
+
+- Install **1.0.26** from TestFlight, and open it once to be sure it is the
+  build with the store name under the icon.
+- In the app: double-tap the background to put the view back to straight
+  above, then press **Now**, then close the app. It remembers where it was
+  left, and this makes the recording start from the obvious place.
+- Settings > Apps > Where the Planets Are > Location > **Ask Next Time**,
+  so the permission prompt appears in the recording with its reason on it.
+- Turn on Do Not Disturb, and turn portrait orientation lock **off** --
+  landscape is one of the beats.
+- Start the recording from the Home Screen, with the icon in shot, using
+  iOS Screen Recording or QuickTime on the Mac (File > New Movie Recording,
+  then the iPhone as camera; that one also catches the phone being tilted).
+
+### The beats
+
+| Time | Do this | It shows | Caption, if captioning |
+|---|---|---|---|
+| 0:00 | Home Screen, tap the icon | the app launching, nothing before it | |
+| 0:05 | Let it stand still for three seconds | the solar system at today's date, the clock reading real time | Everything where it is, right now |
+| 0:10 | Drag slowly to tilt, then pinch to zoom in and out | a real 3D scene, not a picture | |
+| 0:22 | Tap **Saturn**, wait for it to settle | following a planet: its moons, its rings, and the card of facts | Tap anything to follow it |
+| 0:30 | Let the card stand four seconds | distance, speed, size, next event | |
+| 0:34 | Tap **1mo**, watch six seconds, tap **1x**, then **Now** | time running a month a second, then back to the present | Run time at a month a second |
+| 0:44 | Tap **›** twice, stopping on an eclipse | the event search: eclipses, transits, oppositions | Step to the next eclipse |
+| 0:54 | Tap the **globe** | the view from the Earth's surface | Or stand on the Earth and look up |
+| 1:00 | Pinch in on **Jupiter** until the moons show | 0.03° of sky: a disc with four moons beside it | |
+| 1:08 | Tap the **location arrow**, then Allow When Using | the permission and its reason, then the horizon and compass | It can use where you are |
+| 1:16 | Raise the phone; turn slowly left to right; tilt up and down | the view turning with the phone: the sky-pointing feature | Hold it up and it turns with you |
+| 1:28 | Turn the phone sideways, keep turning slowly | the same in landscape, the panel moving out of the way | |
+| 1:36 | Back to portrait, tap the **ruler**, wait, tap again | true distances, and back | |
+| 1:42 | Tap the **clock**, let the credits stand four seconds, tap to close | where the numbers and the pictures come from | Whose numbers these are |
+
+Let each thing settle before the next tap: the reviewer is watching at
+normal speed, and a hurried recording reads as a broken app. Avoid tapping
+empty space, which hides the controls.
 
 If the file is too large for Resolution Center, upload it somewhere
 unlisted and put the link in the reply instead.
